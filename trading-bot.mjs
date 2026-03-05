@@ -23,6 +23,10 @@ import { writeFileSync, appendFileSync, existsSync } from 'fs';
 import { join, dirname }    from 'path';
 import { fileURLToPath }    from 'url';
 import fetch                from 'node-fetch';
+import {
+  send as tgSend, getUpdates, alertMessage, portfolioMessage,
+  marketMessage, scanResultMessage, HELP,
+} from './src/telegram.js';
 
 import { GrowwClient }      from './src/groww-client.js';
 import {
@@ -262,6 +266,10 @@ function renderAlerts(alerts) {
     print(`  ${C.green}${icon} ${C.bold}${a.symbol}${C.reset}  Score:${a.score}/10  ₹${a.price}  RSI:${a.rsi}  ${a.patterns.join(', ')}`);
     print(`    ${C.dim}Entry:₹${a.price} | SL:₹${a.sl_atr} | T1:₹${a.t1} | T2:₹${a.t2}${C.reset}`);
     log(`ALERT: ${a.symbol} score=${a.score} price=${a.price} rsi=${a.rsi} bias=${a.bias}`, 'ALERT');
+    // Send Telegram alert
+    if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+      tgSend(alertMessage(a), process.env.TELEGRAM_CHAT_ID).catch(() => {});
+    }
   }
 }
 
@@ -390,11 +398,146 @@ async function startup() {
   await new Promise(r => setTimeout(r, 1500));
 }
 
+// ── Telegram command polling ──────────────────────────────────
+let tgPaused = false;
+
+async function startTelegramPolling() {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
+
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  let offset = 0;
+
+  // Send startup notification
+  await tgSend(
+    `🤖 <b>Trading Bot Started</b>\nMode: <b>${ARGS.mode.toUpperCase()}</b> | Interval: <b>${ARGS.interval}m</b>\nWatchlist: <code>${ARGS.watchlist.join(', ')}</code>\nType /help for commands`,
+    chatId
+  ).catch(() => {});
+
+  const poll = async () => {
+    try {
+      const updates = await getUpdates(offset);
+      for (const upd of updates) {
+        offset = upd.update_id + 1;
+        const msg = upd.message;
+        if (!msg?.text) continue;
+        if (String(msg.chat.id) !== String(chatId)) continue; // ignore strangers
+
+        const text = msg.text.trim();
+        const [cmd, ...rest] = text.split(/\s+/);
+
+        switch (cmd.toLowerCase()) {
+          case '/status':
+          case '/s': {
+            const mkt = isMarketHours() ? '🟢 OPEN' : '🔴 CLOSED';
+            const ist = istNow().toLocaleTimeString('en-IN');
+            await tgSend(
+              `📊 <b>Bot Status</b>\nMarket: ${mkt}\nIST: ${ist}\nScans done: ${scanCount} | Alerts: ${alertCount}\nMode: ${ARGS.mode.toUpperCase()}\n${tgPaused ? '⏸ Scanning PAUSED' : '▶️ Scanning ACTIVE'}`,
+              chatId
+            );
+            break;
+          }
+          case '/scan': {
+            const symbols = rest.length ? rest[0].toUpperCase().split(',') : ARGS.watchlist;
+            await tgSend(`🔍 Scanning ${symbols.join(', ')}...`, chatId);
+            const results = (await Promise.allSettled(symbols.map(s => analyseStock(s))))
+              .map(r => r.status === 'fulfilled' ? r.value : null)
+              .filter(Boolean)
+              .sort((a, b) => b.score - a.score);
+            await tgSend(scanResultMessage(results), chatId);
+            break;
+          }
+          case '/analyze':
+          case '/a': {
+            const sym = rest[0]?.toUpperCase();
+            if (!sym) { await tgSend('Usage: /analyze SYMBOL', chatId); break; }
+            await tgSend(`📈 Analysing ${sym}...`, chatId);
+            const s = await analyseStock(sym);
+            if (!s) { await tgSend(`❌ Could not fetch data for ${sym}`, chatId); break; }
+            await tgSend(alertMessage(s), chatId);
+            break;
+          }
+          case '/portfolio':
+          case '/p': {
+            const port = getPortfolio();
+            await tgSend(portfolioMessage(port), chatId);
+            break;
+          }
+          case '/paper_buy':
+          case '/buy': {
+            const [sym, qtyStr] = rest;
+            if (!sym || !qtyStr) { await tgSend('Usage: /buy SYMBOL QTY', chatId); break; }
+            const qty = parseInt(qtyStr, 10);
+            const stockData = await analyseStock(sym.toUpperCase());
+            if (!stockData) { await tgSend(`❌ Could not fetch price for ${sym}`, chatId); break; }
+            const result = paperBuy({ symbol: sym.toUpperCase(), qty, price: stockData.price, note: 'Telegram command' });
+            await tgSend(result.success
+              ? `✅ Bought ${qty} × ${sym.toUpperCase()} @ ₹${stockData.price}`
+              : `❌ Buy failed: ${result.error}`,
+              chatId
+            );
+            break;
+          }
+          case '/gainers': {
+            await tgSend('📊 Fetching top gainers...', chatId);
+            try {
+              const data = await market._nseRequest('/equity-stockIndices?index=NIFTY%2050');
+              const gainers = (data?.data || [])
+                .filter(s => s.pChange > 0)
+                .sort((a, b) => b.pChange - a.pChange)
+                .slice(0, 5);
+              const lines = gainers.map(s => `${s.symbol.padEnd(14)} ₹${s.lastPrice}  +${s.pChange}%`).join('\n');
+              await tgSend(`📈 <b>Top Gainers (NIFTY 50)</b>\n<pre>${lines}</pre>`, chatId);
+            } catch { await tgSend('❌ Could not fetch gainers', chatId); }
+            break;
+          }
+          case '/losers': {
+            await tgSend('📊 Fetching top losers...', chatId);
+            try {
+              const data = await market._nseRequest('/equity-stockIndices?index=NIFTY%2050');
+              const losers = (data?.data || [])
+                .filter(s => s.pChange < 0)
+                .sort((a, b) => a.pChange - b.pChange)
+                .slice(0, 5);
+              const lines = losers.map(s => `${s.symbol.padEnd(14)} ₹${s.lastPrice}  ${s.pChange}%`).join('\n');
+              await tgSend(`📉 <b>Top Losers (NIFTY 50)</b>\n<pre>${lines}</pre>`, chatId);
+            } catch { await tgSend('❌ Could not fetch losers', chatId); }
+            break;
+          }
+          case '/market': {
+            const { nifty, bn } = lastIndices;
+            await tgSend(marketMessage(nifty, bn), chatId);
+            break;
+          }
+          case '/pause': {
+            tgPaused = true;
+            await tgSend('⏸ Scanning paused. Send /resume to restart.', chatId);
+            break;
+          }
+          case '/resume': {
+            tgPaused = false;
+            await tgSend('▶️ Scanning resumed.', chatId);
+            break;
+          }
+          case '/help': {
+            await tgSend(HELP, chatId);
+            break;
+          }
+        }
+      }
+    } catch { /* silently ignore poll errors */ }
+    setTimeout(poll, 2000);
+  };
+
+  poll();
+}
+
 // ── Main loop ─────────────────────────────────────────────────
 async function main() {
   await startup();
+  startTelegramPolling();
 
   const runScan = async () => {
+    if (tgPaused) return;
     try {
       if (!isMarketHours() && !isPreMarket()) {
         clear();
