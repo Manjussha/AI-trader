@@ -19,6 +19,9 @@ import { blackScholes, impliedVolatility, buildChainGreeks, maxPain } from './gr
 import {
   addTrade, closeTrade, getStats, getOpenTrades, getAllTrades
 } from './trade-journal.js';
+import {
+  historicalSimilarity, patternOutcomes, supportTestHistory, priceZoneMap
+} from './history-analyzer.js';
 
 dotenv.config();
 
@@ -1358,6 +1361,154 @@ server.tool('vwap_analysis',
           short: `Sell below VWAP (${vwap20?.toFixed(2)}). SL at VWAP+1ATR (${bands?.upper1}). Target VWAP-2ATR (${bands?.lower2})`,
         },
         tip: 'VWAP reversion is one of the most reliable intraday strategies. Price always gravitates to VWAP.',
+      });
+    } catch (e) { return text({ error: e.message }); }
+  }
+);
+
+// ─── HISTORICAL ANALYSIS (Human behaviour repeats) ─────────────────────────
+
+server.tool('historical_similarity',
+  'Find past moments in history that look exactly like today\'s setup. Shows what happened next — 5, 10, 20 days forward. "History doesn\'t repeat but it rhymes."',
+  {
+    symbol:   z.string().describe('NSE symbol e.g. RELIANCE, TCS, HDFCBANK'),
+    exchange: z.enum(['NSE', 'BSE']).default('NSE'),
+    days:     z.number().int().min(180).max(730).default(365).describe('How much history to search through'),
+    topN:     z.number().int().min(3).max(10).default(5).describe('Number of similar past setups to return'),
+  },
+  async ({ symbol, exchange, days, topN }) => {
+    try {
+      const hist    = await client.getHistoricalDataYahoo(symbol, exchange, days, '1d');
+      const candles = hist.candles;
+      if (!candles?.length) return text({ error: 'No historical data found' });
+
+      const result = historicalSimilarity(candles, topN);
+
+      return text({
+        symbol: symbol.toUpperCase(),
+        exchange,
+        dataPoints: candles.length,
+        ...result,
+        howToRead: [
+          'Each match = a past day when RSI, Bollinger position, price vs SMA was almost identical to today',
+          '"after10d" = what price actually did 10 trading days after that similar moment',
+          'If 4 out of 5 matches show +5% in 10 days → strong bullish precedent',
+          'This is not a guarantee — it\'s a probability edge based on historical human behaviour',
+        ],
+      });
+    } catch (e) { return text({ error: e.message }); }
+  }
+);
+
+server.tool('pattern_outcomes',
+  'See the full historical track record of any candlestick pattern on a stock — win rate, avg return, profit factor. Know if "Hammer on RELIANCE" actually works before you trade it.',
+  {
+    symbol:      z.string().describe('NSE symbol'),
+    pattern:     z.string().describe('Pattern name e.g. "Hammer", "Bullish Engulfing", "Morning Star", "Doji"'),
+    exchange:    z.enum(['NSE', 'BSE']).default('NSE'),
+    days:        z.number().int().min(180).max(730).default(365).describe('History to scan'),
+    forwardDays: z.number().int().min(3).max(30).default(10).describe('Days to measure outcome after pattern'),
+  },
+  async ({ symbol, pattern, exchange, days, forwardDays }) => {
+    try {
+      const hist    = await client.getHistoricalDataYahoo(symbol, exchange, days, '1d');
+      const candles = hist.candles;
+      if (!candles?.length) return text({ error: 'No historical data' });
+
+      const result = patternOutcomes(candles, pattern, forwardDays);
+
+      // Also add the pattern education guide
+      const guide = PATTERN_GUIDE[Object.keys(PATTERN_GUIDE).find(k => k.toLowerCase().includes(pattern.toLowerCase()))] || null;
+
+      return text({
+        symbol: symbol.toUpperCase(),
+        ...result,
+        patternGuide: guide,
+        interpretation: result.totalOccurrences > 0 ? [
+          `Found ${result.totalOccurrences} historical occurrences of "${result.patternName}" on ${symbol}`,
+          `Win rate: ${result.winRate} — ${parseFloat(result.winRate) >= 60 ? 'RELIABLE pattern on this stock' : parseFloat(result.winRate) >= 45 ? 'MODERATE reliability — use with confirmation' : 'LOW reliability on this stock — skip or use strict filters'}`,
+          `Profit factor: ${result.profitFactor} — ${parseFloat(result.profitFactor) >= 2 ? 'Excellent R:R historically' : parseFloat(result.profitFactor) >= 1.5 ? 'Good R:R' : 'Poor R:R — wins are small, losses are big'}`,
+          `Avg time to target: ${result.avgDaysToTarget}`,
+        ] : [],
+      });
+    } catch (e) { return text({ error: e.message }); }
+  }
+);
+
+server.tool('support_test_history',
+  'See every time price visited a key level — did it bounce, break, or consolidate? Know how strong a support/resistance is before betting on it.',
+  {
+    symbol:       z.string().describe('NSE symbol'),
+    level:        z.number().describe('The price level to analyse e.g. 2800 for RELIANCE at ₹2800'),
+    exchange:     z.enum(['NSE', 'BSE']).default('NSE'),
+    days:         z.number().int().min(90).max(730).default(365),
+    tolerancePct: z.number().min(0.5).max(3).default(1.5).describe('How close counts as "visiting" the level (%)'),
+  },
+  async ({ symbol, level, exchange, days, tolerancePct }) => {
+    try {
+      const hist    = await client.getHistoricalDataYahoo(symbol, exchange, days, '1d');
+      const candles = hist.candles;
+      if (!candles?.length) return text({ error: 'No historical data' });
+
+      const live  = await client.getLivePriceNSE(symbol).catch(() => null);
+      const price = live?.priceInfo?.lastPrice || live?.lastPrice || parseFloat(candles[candles.length-1]?.close);
+
+      const result = supportTestHistory(candles, level, tolerancePct);
+
+      return text({
+        symbol:       symbol.toUpperCase(),
+        currentPrice: price,
+        distFromLevel: `${(Math.abs(price - level) / level * 100).toFixed(1)}% away`,
+        ...result,
+        tradeImplication: result.bounceRate
+          ? parseFloat(result.bounceRate) >= 70
+            ? `HIGH CONVICTION: ${result.bounceRate} bounce rate. BUY near ₹${level} with tight SL. This is a proven level.`
+            : parseFloat(result.bounceRate) >= 50
+            ? `MODERATE: ${result.bounceRate} bounce rate. Enter only with additional confirmation (volume, candle pattern).`
+            : `WEAK: Level broke through more than it bounced. Don't rely on it as support.`
+          : null,
+      });
+    } catch (e) { return text({ error: e.message }); }
+  }
+);
+
+server.tool('price_zones',
+  'Map all significant price zones on a stock — levels that have been tested 3+ times are the most important. Shows nearest support and resistance.',
+  {
+    symbol:   z.string().describe('NSE symbol'),
+    exchange: z.enum(['NSE', 'BSE']).default('NSE'),
+    days:     z.number().int().min(60).max(365).default(120).describe('Lookback for zone detection'),
+  },
+  async ({ symbol, exchange, days }) => {
+    try {
+      const hist    = await client.getHistoricalDataYahoo(symbol, exchange, days, '1d');
+      const candles = hist.candles;
+      if (!candles?.length) return text({ error: 'No historical data' });
+
+      const live  = await client.getLivePriceNSE(symbol).catch(() => null);
+      const price = live?.priceInfo?.lastPrice || live?.lastPrice || parseFloat(candles[candles.length-1]?.close);
+
+      const zones   = priceZoneMap(candles, Math.min(candles.length, days));
+      const atrVal  = atr(candles, 14);
+
+      // For top 3 zones, run full support test history
+      const topZones = zones.significantLevels?.slice(0, 3) || [];
+      const enriched = await Promise.all(topZones.map(async z => {
+        const history = supportTestHistory(candles, z.level, 1.5);
+        return { ...z, bounceRate: history.bounceRate, strength: history.levelStrength, totalTests: history.totalVisits };
+      }));
+
+      return text({
+        symbol: symbol.toUpperCase(),
+        currentPrice: price,
+        atr: atrVal?.toFixed(2),
+        ...zones,
+        significantLevels: enriched.length > 0 ? enriched : zones.significantLevels,
+        tradePlan: zones.nearestSupport && zones.nearestResistance ? {
+          longSetup:  `Buy near ₹${zones.nearestSupport.level} support. Target ₹${zones.nearestResistance.level}. Reward: ${(((zones.nearestResistance.level - zones.nearestSupport.level) / zones.nearestSupport.level) * 100).toFixed(1)}%`,
+          shortSetup: `Sell near ₹${zones.nearestResistance.level} resistance. Target ₹${zones.nearestSupport.level}.`,
+        } : null,
+        tip: 'The more times a level has been tested and held, the stronger it is. Institutions place orders at these zones.',
       });
     } catch (e) { return text({ error: e.message }); }
   }
