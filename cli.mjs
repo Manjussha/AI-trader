@@ -16,7 +16,7 @@
 
 import readline  from 'readline';
 import dotenv    from 'dotenv';
-import Anthropic from '@anthropic-ai/sdk';
+import { spawn } from 'child_process';
 import fetch     from 'node-fetch';
 
 import { GrowwClient }    from './src/groww-client.js';
@@ -39,10 +39,25 @@ const C = {
   white:   '\x1b[37m',
 };
 
-const market   = new GrowwClient({ apiKey: process.env.GROWW_API_KEY, totpSecret: process.env.TOTP_SECRET });
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+const market = new GrowwClient({ apiKey: process.env.GROWW_API_KEY, totpSecret: process.env.TOTP_SECRET });
 
-let conversationHistory = []; // for multi-turn Claude conversations
+// ── Claude CLI helper ─────────────────────────────────────────
+function askClaudeCLI(prompt) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    proc.stdout.on('data', chunk => {
+      const text = chunk.toString();
+      process.stdout.write(`${C.cyan}${text}${C.reset}`);
+      out += text;
+    });
+    proc.stderr.on('data', chunk => {
+      // suppress claude CLI status lines (they go to stderr)
+    });
+    proc.on('close', code => code === 0 ? resolve(out) : reject(new Error(`claude exited with code ${code}`)));
+    proc.on('error', err => reject(new Error(`claude CLI not found — make sure Claude Code is installed and 'claude' is in PATH`)));
+  });
+}
 
 // ── Print helpers ─────────────────────────────────────────────
 const p   = (...a) => console.log(...a);
@@ -338,7 +353,6 @@ async function cmdLosers() {
 }
 
 async function cmdAdvisor() {
-  if (!anthropic) { err('Set ANTHROPIC_API_KEY in .env for AI advisor'); return; }
   hdr('AI Trading Advisor');
   inf('Gathering live market data...');
 
@@ -358,67 +372,39 @@ async function cmdAdvisor() {
     const l  = losers.status  === 'fulfilled' ? losers.value  : [];
     const nw = news.status    === 'fulfilled' ? news.value    : [];
 
-    const prompt = `Live NSE market data (${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}):
+    const prompt = `You are an elite Indian prop trader. Be specific, data-driven, and concise. Use ₹ symbol. Give exact price levels.
 
-NIFTY 50: ${n?.lastPrice} (${n?.pChange}%) H:${n?.dayHigh} L:${n?.dayLow}
-BANKNIFTY: ${bn?.lastPrice} (${bn?.pChange}%)
-
+Live NSE market data (${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}):
+NIFTY 50: ${n?.lastPrice} (${n?.pChange >= 0 ? '+' : ''}${n?.pChange}%) H:${n?.dayHigh} L:${n?.dayLow}
+BANKNIFTY: ${bn?.lastPrice} (${bn?.pChange >= 0 ? '+' : ''}${bn?.pChange}%)
 Top Gainers: ${g.map(s => `${s.symbol} +${s.pChange}%`).join(', ')}
 Top Losers:  ${l.map(s => `${s.symbol} ${s.pChange}%`).join(', ')}
 News: ${nw.join(' | ')}
 
-Give me: 1) Market mood in 2 sentences  2) Top 3 specific trade setups with entry/SL/target  3) What to avoid today. Be specific with numbers.`;
+Give me:
+1) Market mood in 2 sentences
+2) Top 3 specific trade setups with exact entry/SL/target levels
+3) What to avoid today and why`;
 
-    inf('Asking Claude...\n');
-    const stream = await anthropic.messages.stream({
-      model: 'claude-opus-4-6', max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
-      system: 'You are an elite Indian prop trader. Be specific, data-driven, brief. Use ₹ symbol. Give exact strikes/levels.',
-    });
-    process.stdout.write(`${C.cyan}`);
-    for await (const chunk of stream) {
-      if (chunk.type === 'content_block_delta') process.stdout.write(chunk.delta?.text || '');
-    }
-    process.stdout.write(`${C.reset}\n`);
+    inf('Asking Claude CLI...\n');
+    await askClaudeCLI(prompt);
+    p('');
   } catch (e) { err(e.message); }
 }
 
-// ── Natural language via Claude ───────────────────────────────
+// ── Natural language via Claude CLI ──────────────────────────
 async function askClaude(input) {
-  if (!anthropic) {
-    err('Set ANTHROPIC_API_KEY in .env to use natural language queries');
-    inf('Or use structured commands: scan, analyze SYMBOL, buy SYMBOL QTY, portfolio, history SYMBOL');
-    return;
-  }
+  const prompt = `You are an AI trading assistant for Indian markets (NSE/BSE). Keep responses concise and terminal-friendly.
+Available CLI commands: scan, analyze SYMBOL, buy SYMBOL QTY, sell SYMBOL QTY, portfolio, history SYMBOL, gainers, losers, status, advisor
+Current time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
 
-  const systemPrompt = `You are an AI trading assistant for Indian markets (NSE/BSE).
-The user is talking to you via a terminal CLI. Keep responses concise and terminal-friendly.
-If they ask to scan/analyze/buy/sell, tell them the exact CLI command to use AND answer their question.
-Available commands: scan, analyze SYMBOL, buy SYMBOL QTY, sell SYMBOL QTY, portfolio, history SYMBOL, gainers, losers, status, advisor
-Current time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+User: ${input}`;
 
-  conversationHistory.push({ role: 'user', content: input });
-
+  p('');
   inf('Thinking...\n');
   try {
-    const stream = await anthropic.messages.stream({
-      model: 'claude-opus-4-6', max_tokens: 800,
-      system: systemPrompt,
-      messages: conversationHistory,
-    });
-    let response = '';
-    process.stdout.write(`  ${C.cyan}`);
-    for await (const chunk of stream) {
-      if (chunk.type === 'content_block_delta') {
-        const t = chunk.delta?.text || '';
-        process.stdout.write(t);
-        response += t;
-      }
-    }
-    process.stdout.write(`${C.reset}\n\n`);
-    conversationHistory.push({ role: 'assistant', content: response });
-    // Keep last 10 turns
-    if (conversationHistory.length > 20) conversationHistory = conversationHistory.slice(-20);
+    await askClaudeCLI(prompt);
+    p('');
   } catch (e) { err(e.message); }
 }
 
@@ -479,7 +465,7 @@ async function route(input) {
         ['history / h SYMBOL',  'Historical similarity — what happened in similar setups'],
         ['gainers / g',         'Top gainers today'],
         ['losers / l',          'Top losers today'],
-        ['advisor / ai',        'AI-generated trade plan (needs ANTHROPIC_API_KEY)'],
+        ['advisor / ai',        'AI-generated trade plan (uses Claude Code CLI)'],
         ['buy SYMBOL QTY',      'Paper buy at live price'],
         ['sell SYMBOL QTY',     'Paper sell at live price'],
         ['portfolio / p',       'Paper trading portfolio + P&L'],
@@ -504,10 +490,8 @@ function banner() {
   p(`${C.bold}${C.cyan}  ╔══════════════════════════════════════════════════════╗`);
   p(`  ║        AI TRADER — Interactive Terminal               ║`);
   p(`  ╚══════════════════════════════════════════════════════╝${C.reset}`);
-  p(`  ${C.dim}Type commands or plain English. 'help' for all commands.${C.reset}`);
-  if (!process.env.ANTHROPIC_API_KEY) {
-    p(`  ${C.yellow}Tip: Set ANTHROPIC_API_KEY in .env to enable natural language + AI advisor${C.reset}`);
-  }
+  p(`  ${C.dim}Type commands or plain English — uses Claude Code CLI for AI.${C.reset}`);
+  p(`  ${C.dim}'help' for all commands.${C.reset}`);
   p('');
 }
 
