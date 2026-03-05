@@ -14,10 +14,13 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-import readline  from 'readline';
-import dotenv    from 'dotenv';
-import { spawn } from 'child_process';
-import fetch     from 'node-fetch';
+import readline              from 'readline';
+import dotenv               from 'dotenv';
+import { spawn }            from 'child_process';
+import { writeFileSync, unlinkSync } from 'fs';
+import { tmpdir }           from 'os';
+import { join }             from 'path';
+import fetch                from 'node-fetch';
 
 import { GrowwClient }    from './src/groww-client.js';
 import {
@@ -44,18 +47,27 @@ const market = new GrowwClient({ apiKey: process.env.GROWW_API_KEY, totpSecret: 
 // ── Claude CLI helper ─────────────────────────────────────────
 function askClaudeCLI(prompt) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('claude', ['-p', prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const env = { ...process.env };
+    delete env.CLAUDECODE; // allow running outside a Claude Code session
+
+    // Write prompt to temp file — avoids shell arg escaping & length limits on Windows
+    const tmp = join(tmpdir(), `trader-${Date.now()}.txt`);
+    writeFileSync(tmp, prompt, 'utf8');
+
+    // Shell redirection `< file` feeds stdin reliably on Windows + Unix
+    const proc = spawn(`claude --print < "${tmp}"`, [], { stdio: ['ignore', 'pipe', 'pipe'], shell: true, env });
     let out = '';
     proc.stdout.on('data', chunk => {
       const text = chunk.toString();
       process.stdout.write(`${C.cyan}${text}${C.reset}`);
       out += text;
     });
-    proc.stderr.on('data', chunk => {
-      // suppress claude CLI status lines (they go to stderr)
+    proc.stderr.on('data', () => {});
+    proc.on('close', code => {
+      try { unlinkSync(tmp); } catch {}
+      code === 0 ? resolve(out) : reject(new Error(`claude exited with code ${code}`));
     });
-    proc.on('close', code => code === 0 ? resolve(out) : reject(new Error(`claude exited with code ${code}`)));
-    proc.on('error', err => reject(new Error(`claude CLI not found — make sure Claude Code is installed and 'claude' is in PATH`)));
+    proc.on('error', () => reject(new Error('claude CLI not found — run: npm install -g @anthropic-ai/claude-code')));
   });
 }
 
