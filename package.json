@@ -1,0 +1,23 @@
+{
+  "name": "groww-mcp-trading",
+  "version": "1.0.0",
+  "description": "Groww Trading MCP Server with AI Analytics",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start":      "node src/server.js",
+    "dev":        "node --watch src/server.js",
+    "bot":        "node trading-bot.mjs",
+    "bot:paper":  "node trading-bot.mjs --mode paper",
+    "bot:watch":  "node trading-bot.mjs --mode watch --interval 5",
+    "advisor":    "node advisor-run.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "@modelcontextprotocol/sdk": "^1.5.0",
+    "dotenv": "^16.4.7",
+    "node-fetch": "^3.3.2",
+    "puppeteer": "^24.38.0",
+    "zod": "^3.23.8"
+  }
+}

@@ -1,0 +1,26 @@
+# ── Secrets — NEVER commit these ─────────────────────────────
+.env
+*.env
+.env.local
+.env.production
+
+# ── Auto-generated data files ─────────────────────────────────
+paper-portfolio.json
+trade-journal.json
+bot.log
+*.log
+
+# ── Node ──────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+
+# ── OS junk ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor ────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.suo
+*.user
