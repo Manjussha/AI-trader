@@ -14,21 +14,16 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-import readline              from 'readline';
-import dotenv               from 'dotenv';
-import { spawn }            from 'child_process';
-import { writeFileSync, unlinkSync } from 'fs';
-import { tmpdir }           from 'os';
-import { join }             from 'path';
-import fetch                from 'node-fetch';
+import readline from 'readline';
+import dotenv   from 'dotenv';
 
 import { GrowwClient }    from './src/groww-client.js';
 import {
   rsi, sma, bollingerBands, atr, vwap, stochastic,
-  superTrend, supportResistance, generateSignal, volatility, calcPositionSize,
+  superTrend, supportResistance, generateSignal, volatility,
 } from './src/analytics.js';
-import { scanPatterns, PATTERN_GUIDE } from './src/patterns.js';
-import { historicalSimilarity, patternOutcomes, supportTestHistory, priceZoneMap } from './src/history-analyzer.js';
+import { scanPatterns } from './src/patterns.js';
+import { historicalSimilarity } from './src/history-analyzer.js';
 import { paperBuy, paperSell, getPortfolio, resetPortfolio, getOrders } from './src/paper-trade.js';
 import { getStats } from './src/trade-journal.js';
 
@@ -44,32 +39,6 @@ const C = {
 
 const market = new GrowwClient({ apiKey: process.env.GROWW_API_KEY, totpSecret: process.env.TOTP_SECRET });
 
-// ── Claude CLI helper ─────────────────────────────────────────
-function askClaudeCLI(prompt) {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env };
-    delete env.CLAUDECODE; // allow running outside a Claude Code session
-
-    // Write prompt to temp file — avoids shell arg escaping & length limits on Windows
-    const tmp = join(tmpdir(), `trader-${Date.now()}.txt`);
-    writeFileSync(tmp, prompt, 'utf8');
-
-    // Shell redirection `< file` feeds stdin reliably on Windows + Unix
-    const proc = spawn(`claude --print < "${tmp}"`, [], { stdio: ['ignore', 'pipe', 'pipe'], shell: true, env });
-    let out = '';
-    proc.stdout.on('data', chunk => {
-      const text = chunk.toString();
-      process.stdout.write(`${C.cyan}${text}${C.reset}`);
-      out += text;
-    });
-    proc.stderr.on('data', () => {});
-    proc.on('close', code => {
-      try { unlinkSync(tmp); } catch {}
-      code === 0 ? resolve(out) : reject(new Error(`claude exited with code ${code}`));
-    });
-    proc.on('error', () => reject(new Error('claude CLI not found — run: npm install -g @anthropic-ai/claude-code')));
-  });
-}
 
 // ── Print helpers ─────────────────────────────────────────────
 const p   = (...a) => console.log(...a);
@@ -366,58 +335,26 @@ async function cmdLosers() {
 
 async function cmdAdvisor() {
   hdr('AI Trading Advisor');
-  inf('Gathering live market data...');
-
-  try {
-    const [nRaw, bnRaw, gainers, losers, news] = await Promise.allSettled([
-      market._nseRequest('/equity-stockIndices?index=NIFTY%2050'),
-      market._nseRequest('/equity-stockIndices?index=NIFTY%20BANK'),
-      market.getTopGainers('NIFTY 50', 5),
-      market.getTopLosers('NIFTY 50', 5),
-      fetch('https://finance.yahoo.com/rss/headline?s=%5ENSEI', { headers: { 'User-Agent': 'Mozilla/5.0' } })
-        .then(r => r.text()).then(xml => [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]>/g)].slice(1, 6).map(m => m[1])),
-    ]);
-
-    const n  = nRaw.status  === 'fulfilled' ? nRaw.value?.data?.[0]  : null;
-    const bn = bnRaw.status === 'fulfilled' ? bnRaw.value?.data?.[0] : null;
-    const g  = gainers.status === 'fulfilled' ? gainers.value : [];
-    const l  = losers.status  === 'fulfilled' ? losers.value  : [];
-    const nw = news.status    === 'fulfilled' ? news.value    : [];
-
-    const prompt = `You are an elite Indian prop trader. Be specific, data-driven, and concise. Use ₹ symbol. Give exact price levels.
-
-Live NSE market data (${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}):
-NIFTY 50: ${n?.lastPrice} (${n?.pChange >= 0 ? '+' : ''}${n?.pChange}%) H:${n?.dayHigh} L:${n?.dayLow}
-BANKNIFTY: ${bn?.lastPrice} (${bn?.pChange >= 0 ? '+' : ''}${bn?.pChange}%)
-Top Gainers: ${g.map(s => `${s.symbol} +${s.pChange}%`).join(', ')}
-Top Losers:  ${l.map(s => `${s.symbol} ${s.pChange}%`).join(', ')}
-News: ${nw.join(' | ')}
-
-Give me:
-1) Market mood in 2 sentences
-2) Top 3 specific trade setups with exact entry/SL/target levels
-3) What to avoid today and why`;
-
-    inf('Asking Claude CLI...\n');
-    await askClaudeCLI(prompt);
-    p('');
-  } catch (e) { err(e.message); }
+  inf('Use Claude Code directly for AI analysis:');
+  p('');
+  p(`  ${C.cyan}Open a terminal in this folder and run:${C.reset}`);
+  p(`  ${C.bold}  claude${C.reset}`);
+  p(`  ${C.dim}  Then ask anything — Claude knows all the tools, indicators, and your trading style.${C.reset}`);
+  p(`  ${C.dim}  Example: "analyze RELIANCE and give me entry/SL/target"${C.reset}`);
+  p(`  ${C.dim}           "what stocks look good today for intraday?"${C.reset}`);
+  p(`  ${C.dim}           "scan NIFTY 50 for oversold setups"${C.reset}`);
+  p('');
 }
 
-// ── Natural language via Claude CLI ──────────────────────────
-async function askClaude(input) {
-  const prompt = `You are an AI trading assistant for Indian markets (NSE/BSE). Keep responses concise and terminal-friendly.
-Available CLI commands: scan, analyze SYMBOL, buy SYMBOL QTY, sell SYMBOL QTY, portfolio, history SYMBOL, gainers, losers, status, advisor
-Current time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
-
-User: ${input}`;
-
+// ── Natural language fallback ────────────────────────────────
+function askClaude(input) {
   p('');
-  inf('Thinking...\n');
-  try {
-    await askClaudeCLI(prompt);
-    p('');
-  } catch (e) { err(e.message); }
+  p(`  ${C.yellow}For AI questions, use Claude Code directly:${C.reset}`);
+  p(`  ${C.bold}  claude${C.reset}  ${C.dim}(open in this folder)${C.reset}`);
+  p(`  ${C.dim}  Then ask: "${input}"${C.reset}`);
+  p('');
+  p(`  ${C.dim}Or use a structured command — type ${C.reset}${C.bold}help${C.reset}${C.dim} to see all commands.${C.reset}`);
+  p('');
 }
 
 // ── Command router ────────────────────────────────────────────
@@ -467,7 +404,6 @@ async function route(input) {
     case 'quit':  case 'exit': case 'q':
       p(`\n${C.dim}  Bye. Stay disciplined.${C.reset}\n`);
       process.exit(0);
-      break;
     case 'help': case '?':
       hdr('Commands');
       const cmds = [
