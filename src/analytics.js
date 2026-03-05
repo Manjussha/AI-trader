@@ -272,3 +272,19 @@ export function superTrend(candles, period = 7, multiplier = 3) {
   const trend = close > lowerBand ? 'BULLISH' : 'BEARISH';
   return { trend, upperBand: upperBand.toFixed(2), lowerBand: lowerBand.toFixed(2), atr: atrVal.toFixed(2) };
 }
+
+// Volume Anomaly — detects unusual volume vs rolling average
+export function volumeAnomaly(volumes, lookback = 20) {
+  if (volumes.length < lookback + 1) return null;
+  const window   = volumes.slice(-lookback - 1);
+  const avgVol   = window.slice(0, -1).reduce((a, b) => a + b, 0) / lookback;
+  const todayVol = window[window.length - 1];
+  const ratio    = avgVol > 0 ? todayVol / avgVol : 0;
+  return {
+    ratio:       parseFloat(ratio.toFixed(1)),
+    avgVolume:   Math.round(avgVol),
+    todayVolume: todayVol,
+    isAnomaly:   ratio >= 2,
+    strength:    ratio >= 3 ? 'STRONG' : ratio >= 2 ? 'MODERATE' : 'NORMAL',
+  };
+}

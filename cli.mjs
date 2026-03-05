@@ -20,11 +20,14 @@ import dotenv   from 'dotenv';
 import { GrowwClient }    from './src/groww-client.js';
 import {
   rsi, sma, bollingerBands, atr, vwap, stochastic,
-  superTrend, supportResistance, generateSignal, volatility,
+  superTrend, supportResistance, generateSignal, volatility, volumeAnomaly,
 } from './src/analytics.js';
-import { scanPatterns } from './src/patterns.js';
+import { scanPatterns }      from './src/patterns.js';
 import { historicalSimilarity } from './src/history-analyzer.js';
-import { paperBuy, paperSell, getPortfolio, resetPortfolio, getOrders } from './src/paper-trade.js';
+import { getFIIDII, getPCR } from './src/market-pulse.js';
+import { getOILevels }       from './src/oi-analyzer.js';
+import { backtestStrategy }  from './src/backtester.js';
+import { paperBuy, paperSell, getPortfolio, resetPortfolio, getOrders, trailStopLoss } from './src/paper-trade.js';
 import { getStats } from './src/trade-journal.js';
 
 dotenv.config();
@@ -333,6 +336,161 @@ async function cmdLosers() {
   } catch (e) { err(e.message); }
 }
 
+async function cmdFII() {
+  hdr('FII / DII Activity (Last 5 Days)');
+  const nseGet = market._nseRequest.bind(market);
+  const data   = await getFIIDII(nseGet);
+  if (!data) { err('Could not fetch FII/DII data'); return; }
+
+  const bias = data.marketBias === 'BULLISH' ? C.green : C.red;
+  p(`  Market Bias: ${bias}${C.bold}${data.marketBias}${C.reset}  |  FII 5d net: ${parseFloat(data.fiiNet5d) >= 0 ? C.green : C.red}₹${data.fiiNet5d} Cr${C.reset}  |  DII 5d net: ${parseFloat(data.diiNet5d) >= 0 ? C.green : C.red}₹${data.diiNet5d} Cr${C.reset}`);
+  p('');
+  p(`  ${C.bold}FII/FPI${C.reset}  ${data.fiiBias === 'BUYING' ? C.green : C.red}${data.fiiBias}${C.reset}`);
+  p(`  ${'Date'.padEnd(14)} ${'Buy (Cr)'.padStart(12)}  ${'Sell (Cr)'.padStart(12)}  ${'Net (Cr)'.padStart(12)}`);
+  hr();
+  for (const r of data.fii) {
+    const nc = r.net >= 0 ? C.green : C.red;
+    p(`  ${r.date.padEnd(14)} ${String(r.buy.toFixed(0)).padStart(12)}  ${String(r.sell.toFixed(0)).padStart(12)}  ${nc}${String(r.net.toFixed(0)).padStart(12)}${C.reset}`);
+  }
+  p('');
+  p(`  ${C.bold}DII${C.reset}  ${data.diiBias === 'BUYING' ? C.green : C.red}${data.diiBias}${C.reset}`);
+  p(`  ${'Date'.padEnd(14)} ${'Buy (Cr)'.padStart(12)}  ${'Sell (Cr)'.padStart(12)}  ${'Net (Cr)'.padStart(12)}`);
+  hr();
+  for (const r of data.dii) {
+    const nc = r.net >= 0 ? C.green : C.red;
+    p(`  ${r.date.padEnd(14)} ${String(r.buy.toFixed(0)).padStart(12)}  ${String(r.sell.toFixed(0)).padStart(12)}  ${nc}${String(r.net.toFixed(0)).padStart(12)}${C.reset}`);
+  }
+}
+
+async function cmdPCR(symbol = 'NIFTY') {
+  hdr(`Put-Call Ratio — ${symbol.toUpperCase()}`);
+  const nseGet = market._nseRequest.bind(market);
+  const data   = await getPCR(nseGet, symbol.toUpperCase());
+  if (!data) { err('Could not fetch option chain data'); return; }
+
+  const sc = data.sentiment === 'BULLISH' ? C.green : data.sentiment === 'BEARISH' ? C.red : C.yellow;
+  p(`  Spot: ${C.cyan}${C.bold}₹${data.spot}${C.reset}   PCR (OI): ${sc}${C.bold}${data.pcrOI}${C.reset}   PCR (Vol): ${data.pcrVol}`);
+  p(`  Sentiment: ${sc}${C.bold}${data.sentiment}${C.reset}`);
+  p(`  ${C.dim}${data.note}${C.reset}`);
+  p('');
+  p(`  ${C.dim}Total PE OI: ${data.totalPEOI.toLocaleString('en-IN')}  |  Total CE OI: ${data.totalCEOI.toLocaleString('en-IN')}${C.reset}`);
+  p('');
+  p(`  ${C.dim}PCR Guide: >1.5 very bullish  |  >1.2 bullish  |  0.7-1.2 neutral  |  <0.7 bearish  |  <0.5 very bearish${C.reset}`);
+}
+
+async function cmdOI(symbol = 'NIFTY') {
+  hdr(`Open Interest Analysis — ${symbol.toUpperCase()}`);
+  inf('Fetching option chain...');
+  const nseGet = market._nseRequest.bind(market);
+  const data   = await getOILevels(nseGet, symbol.toUpperCase());
+  if (!data || data.error) { err(data?.error || 'Could not fetch OI data'); return; }
+
+  const bc = data.bias === 'BULLISH' ? C.green : data.bias === 'BEARISH' ? C.red : C.yellow;
+  p(`  Spot: ${C.cyan}${C.bold}₹${data.spot}${C.reset}   Expiry: ${C.dim}${data.expiry}${C.reset}   Max Pain: ${C.yellow}${C.bold}₹${data.maxPain}${C.reset}   Bias: ${bc}${data.bias}${C.reset}`);
+  p(`  ${C.dim}${data.interpretation}${C.reset}`);
+  p('');
+  p(`  ${C.bold}${C.red}Resistance (high CE OI)${C.reset}`);
+  for (const r of data.resistance)
+    p(`    ₹${r.strike}  OI: ${r.oi}K  ${r.change === 'ADDING' ? C.red + 'ADDING (bearish wall building)' : C.green + 'SHEDDING (resistance weakening)'}${C.reset}`);
+  p('');
+  p(`  ${C.bold}${C.green}Support (high PE OI)${C.reset}`);
+  for (const s of data.support)
+    p(`    ₹${s.strike}  OI: ${s.oi}K  ${s.change === 'ADDING' ? C.green + 'ADDING (support building)' : C.red + 'SHEDDING (support crumbling)'}${C.reset}`);
+  if (data.ceUnwinding?.length) {
+    p('');
+    p(`  ${C.dim}CE unwinding above spot (resistance easing — bullish): ${data.ceUnwinding.map(s => `₹${s.strike}`).join(', ')}${C.reset}`);
+  }
+}
+
+async function cmdBacktest(symbol, days = '365') {
+  if (!symbol) { err('Usage: backtest SYMBOL [days]'); return; }
+  const lookback = parseInt(days, 10);
+  hdr(`Backtest — ${symbol.toUpperCase()} (${lookback} days)`);
+  inf(`Fetching ${lookback} days of history...`);
+  try {
+    const hist   = await market.getHistoricalDataYahoo(symbol, 'NSE', lookback, '1d');
+    const candles = hist.candles;
+    if (candles.length < 60) { err('Not enough data for backtest'); return; }
+
+    inf(`Running confluence strategy on ${candles.length} candles...`);
+    const result = backtestStrategy(candles, { minScore: 6, capital: 100000, riskPct: 1 });
+    const st     = result.stats;
+    const wc     = parseFloat(st.returns) >= 0 ? C.green : C.red;
+    const pfc    = parseFloat(st.profitFactor) >= 1.5 ? C.green : C.red;
+
+    p('');
+    p(`  ${C.bold}Results (confluence score ≥ 6, 1% risk/trade, ₹1L capital)${C.reset}`);
+    hr();
+    p(`  Trades:         ${st.totalTrades}  (${st.wins}W / ${st.losses}L)`);
+    p(`  Win Rate:       ${parseFloat(st.winRate) >= 50 ? C.green : C.red}${st.winRate}${C.reset}`);
+    p(`  Profit Factor:  ${pfc}${st.profitFactor}${C.reset}   ${C.dim}(>1.5 = good strategy)${C.reset}`);
+    p(`  Expectancy:     ${st.expectancy} per trade`);
+    p(`  Avg Win:        ${C.green}${st.avgWin}${C.reset}   Avg Loss: ${C.red}${st.avgLoss}${C.reset}`);
+    p(`  Max Drawdown:   ${C.red}${st.maxDrawdown}${C.reset}`);
+    p(`  Total Return:   ${wc}${st.returns}${C.reset}  (₹${Number(st.totalPnl).toLocaleString('en-IN')} P&L)`);
+    p('');
+
+    if (result.trades.length > 0) {
+      p(`  ${C.bold}Last 5 Trades${C.reset}`);
+      hr();
+      for (const t of result.trades.slice(-5)) {
+        const tc = t.win ? C.green : C.red;
+        p(`  ${t.entryDate}  Entry:₹${t.entry}  Exit:₹${t.exit}  ${tc}P&L:₹${t.pnl} (${t.pnlPct}%)${C.reset}  [${t.reason}] Score:${t.score}`);
+      }
+    }
+  } catch (e) { err(e.message); }
+}
+
+async function cmdVolume(symbol) {
+  if (!symbol) { err('Usage: volume SYMBOL'); return; }
+  hdr(`Volume Analysis — ${symbol.toUpperCase()}`);
+  try {
+    const hist    = await market.getHistoricalDataYahoo(symbol, 'NSE', 30, '1d');
+    const candles = hist.candles;
+    const vols    = candles.map(c => c.volume || 0);
+    const va      = volumeAnomaly(vols, 20);
+    if (!va) { err('Not enough data'); return; }
+
+    const sc = va.strength === 'STRONG' ? C.red + C.bold : va.strength === 'MODERATE' ? C.yellow : C.dim;
+    p(`  Today's Volume: ${C.bold}${va.todayVolume.toLocaleString('en-IN')}${C.reset}`);
+    p(`  20d Avg Volume: ${va.avgVolume.toLocaleString('en-IN')}`);
+    p(`  Volume Ratio:   ${sc}${va.ratio}x${C.reset}  ${va.strength}`);
+    p('');
+    if (va.isAnomaly) {
+      p(`  ${C.yellow}Volume spike detected! (${va.ratio}x avg)${C.reset}`);
+      p(`  ${C.dim}High volume often precedes or confirms a significant price move.${C.reset}`);
+      p(`  ${C.dim}Combine with price action — breakout + high volume = strong signal.${C.reset}`);
+    } else {
+      p(`  ${C.dim}Volume normal — no anomaly detected.${C.reset}`);
+    }
+  } catch (e) { err(e.message); }
+}
+
+async function cmdTrail(symbol, atrMult = '2') {
+  if (!symbol) { err('Usage: trail SYMBOL [atr_multiplier]'); return; }
+  hdr(`Trail Stop Loss — ${symbol.toUpperCase()}`);
+  try {
+    const [histRes, liveRes] = await Promise.allSettled([
+      market.getHistoricalDataYahoo(symbol, 'NSE', 30, '1d'),
+      market.getLivePriceNSE(symbol),
+    ]);
+    const candles  = histRes.status === 'fulfilled' ? histRes.value.candles : [];
+    const live     = liveRes.status === 'fulfilled' ? liveRes.value : null;
+    const price    = live?.priceInfo?.lastPrice || live?.lastPrice || parseFloat(candles.at(-1)?.close);
+    const atrValue = atr(candles, 14);
+    if (!price || !atrValue) { err('Could not fetch price/ATR'); return; }
+
+    const result = trailStopLoss(symbol.toUpperCase(), price, atrValue, parseFloat(atrMult));
+    if (result.success) {
+      ok(result.message);
+      p(`  Current Price: ${C.cyan}₹${price}${C.reset}   ATR: ₹${atrValue.toFixed(2)}`);
+      p(`  Old SL: ${C.dim}₹${result.oldSL}${C.reset}   New SL: ${C.green}₹${result.newSL}${C.reset}`);
+    } else {
+      inf(result.message || result.error);
+    }
+  } catch (e) { err(e.message); }
+}
+
 async function cmdAdvisor() {
   hdr('AI Trading Advisor');
   inf('Use Claude Code directly for AI analysis:');
@@ -377,6 +535,12 @@ async function route(input) {
     case 'gainers':  case 'g':           return cmdGainers();
     case 'losers':   case 'l':           return cmdLosers();
     case 'advisor':  case 'ai':          return cmdAdvisor();
+    case 'fii':                           return cmdFII();
+    case 'pcr':                           return cmdPCR(args[0] || 'NIFTY');
+    case 'oi':                            return cmdOI(args[0] || 'NIFTY');
+    case 'backtest': case 'bt':          return cmdBacktest(args[0], args[1]);
+    case 'volume':   case 'vol':         return cmdVolume(args[0]);
+    case 'trail':                         return cmdTrail(args[0], args[1]);
     case 'reset':
       resetPortfolio(parseFloat(args[0] || '100000'));
       ok(`Portfolio reset with ₹${(parseFloat(args[0] || '100000')).toLocaleString('en-IN')}`);
@@ -413,16 +577,21 @@ async function route(input) {
         ['history / h SYMBOL',  'Historical similarity — what happened in similar setups'],
         ['gainers / g',         'Top gainers today'],
         ['losers / l',          'Top losers today'],
-        ['advisor / ai',        'AI-generated trade plan (uses Claude Code CLI)'],
+        ['advisor / ai',        'AI trade plan (open claude in this folder)'],
+        ['fii',                 'FII/DII net buy/sell last 5 days'],
+        ['pcr [NIFTY|BANKNIFTY]','Put-Call Ratio — market sentiment'],
+        ['oi [NIFTY|BANKNIFTY]','OI levels — support/resistance/max pain'],
+        ['volume / vol SYMBOL', 'Volume anomaly — is unusual volume present?'],
+        ['backtest / bt SYMBOL [days]', 'Backtest confluence strategy on history'],
         ['buy SYMBOL QTY',      'Paper buy at live price'],
         ['sell SYMBOL QTY',     'Paper sell at live price'],
+        ['trail SYMBOL [mult]', 'Trail stop loss up by ATR (default 2×ATR)'],
         ['portfolio / p',       'Paper trading portfolio + P&L'],
         ['orders',              'Recent paper order history'],
         ['stats',               'Journal win rate, profit factor, drawdown'],
         ['reset [AMOUNT]',      'Reset paper portfolio (default ₹1,00,000)'],
         ['clear',               'Clear screen'],
         ['quit / q',            'Exit'],
-        ['',                    'Or just type naturally — AI understands plain English'],
       ];
       for (const [c, d] of cmds) p(`  ${C.cyan}${c.padEnd(22)}${C.reset}${C.dim}${d}${C.reset}`);
       return;

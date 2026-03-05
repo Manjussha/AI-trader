@@ -236,3 +236,30 @@ export function resetPortfolio(capital = 100000) {
   save(fresh);
   return { reset: true, capital };
 }
+
+// Trailing Stop Loss — moves SL up as price rises (never moves it down)
+export function trailStopLoss(symbol, currentPrice, atrValue, multiplier = 2) {
+  const p       = load();
+  const holding = p.holdings[symbol.toUpperCase()];
+  if (!holding) return { success: false, error: `Not holding ${symbol}` };
+
+  const newSL = parseFloat((currentPrice - multiplier * atrValue).toFixed(2));
+  const oldSL = parseFloat((holding.trailSL || holding.avgPrice - multiplier * atrValue).toFixed(2));
+
+  if (newSL <= oldSL) {
+    return { success: false, message: `SL at ₹${oldSL} — price not high enough to trail yet` };
+  }
+
+  holding.trailSL = newSL;
+  p.lastUpdated   = new Date().toISOString();
+  save(p);
+
+  return {
+    success: true,
+    symbol:  symbol.toUpperCase(),
+    oldSL,
+    newSL,
+    moved:   (newSL - oldSL).toFixed(2),
+    message: `Trailing SL moved up ₹${(newSL - oldSL).toFixed(2)} → ₹${newSL}`,
+  };
+}

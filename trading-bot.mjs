@@ -32,9 +32,10 @@ import { GrowwClient }      from './src/groww-client.js';
 import {
   rsi, sma, ema, macd, bollingerBands, atr, vwap,
   stochastic, superTrend, supportResistance,
-  volatility, generateSignal, calcPositionSize,
+  volatility, generateSignal, calcPositionSize, volumeAnomaly,
 } from './src/analytics.js';
 import { scanPatterns }     from './src/patterns.js';
+import { getFIIDII, getPCR } from './src/market-pulse.js';
 import { paperBuy, paperSell, getPortfolio, resetPortfolio } from './src/paper-trade.js';
 import { addTrade }         from './src/trade-journal.js';
 
@@ -174,6 +175,7 @@ async function analyseStock(symbol) {
     const stoch   = stochastic(closes, highs, lows);
     const vwapVal = vwap(candles.slice(-20));
     const patts   = scanPatterns(candles).filter(p => !p.barsAgo);
+    const volAnom = volumeAnomaly(vols, 20);
 
     // Confluence score
     let score = 0;
@@ -186,6 +188,7 @@ async function analyseStock(symbol) {
     if (bb && price < bb.lower)          score += 1;
     if (sr && Math.abs(price - sr.support) / sr.support < 0.015) score += 1;
     if (patts.some(p => p.sentiment === 'BULLISH' && p.strength === 'STRONG')) score += 1;
+    if (volAnom?.isAnomaly)              score += 1; // volume surge confirms move
 
     return {
       symbol, price, score,
@@ -200,6 +203,7 @@ async function analyseStock(symbol) {
       stoch,
       supertrend: st?.trend,
       patterns:   patts.map(p => p.pattern),
+      volAnomaly: volAnom,
       bb_pos:     bb ? (price < bb.lower ? 'BELOW_BB' : price > bb.upper ? 'ABOVE_BB' : 'INSIDE_BB') : null,
       bias:       score >= 6 ? 'STRONG_BUY' : score >= 4 ? 'BUY' : score <= 2 ? 'SELL' : 'NEUTRAL',
       sl_atr:     atrVal ? (price - 2 * atrVal).toFixed(2) : null,
@@ -226,6 +230,14 @@ function renderHeader(snap) {
     print(`  ${C.bold}NIFTY${C.reset}  ${nc}${nifty.level}  ${nifty.pChange >= 0 ? '+' : ''}${nifty.pChange}%${C.reset}  ${C.dim}H:${nifty.high} L:${nifty.low}${C.reset}   ${C.bold}BANKNIFTY${C.reset}  ${bc}${bn?.level}  ${bn?.pChange >= 0 ? '+' : ''}${bn?.pChange}%${C.reset}`);
   }
   print(`  Market: ${mkts}${C.reset}  ${C.dim}scan #${snap.scanCount} | alerts: ${snap.alertCount}${C.reset}`);
+  // PCR + FII line
+  if (lastPCR || lastFII) {
+    const pcrC = lastPCR ? (lastPCR.sentiment === 'BULLISH' ? C.green : lastPCR.sentiment === 'BEARISH' ? C.red : C.yellow) : '';
+    const fiiC = lastFII ? (lastFII.fiiBias === 'BUYING' ? C.green : C.red) : '';
+    const pcrStr = lastPCR ? `  PCR:${pcrC}${lastPCR.pcrOI}${C.reset}(${pcrC}${lastPCR.sentiment}${C.reset})` : '';
+    const fiiStr = lastFII ? `  FII 5d:${fiiC}₹${lastFII.fiiNet5d}Cr${C.reset}(${fiiC}${lastFII.fiiBias}${C.reset})  DII:${lastFII.diiBias === 'BUYING' ? C.green : C.red}${lastFII.diiBias}${C.reset}` : '';
+    print(`${pcrStr}${fiiStr}`);
+  }
   print(`${C.dim}${'─'.repeat(72)}${C.reset}`);
 }
 
@@ -329,16 +341,26 @@ async function fetchIndices() {
 
 // ── Main scan loop ────────────────────────────────────────────
 let scanCount = 0, alertCount = 0;
-let lastNews   = [];
+let lastNews    = [];
 let lastIndices = { nifty: null, bn: null };
+let lastPCR     = null;
+let lastFII     = null;
 
 async function scan() {
   scanCount++;
+  const nseGet = market._nseRequest.bind(market);
 
-  // Fetch indices + news in background
-  const [indicesRes, newsRes] = await Promise.allSettled([fetchIndices(), fetchNews()]);
+  // Fetch indices, news, PCR, FII/DII in background (non-blocking)
+  const [indicesRes, newsRes, pcrRes, fiiRes] = await Promise.allSettled([
+    fetchIndices(),
+    fetchNews(),
+    getPCR(nseGet, 'NIFTY'),
+    getFIIDII(nseGet),
+  ]);
   if (indicesRes.status === 'fulfilled') lastIndices = indicesRes.value;
-  if (newsRes.status   === 'fulfilled') lastNews     = newsRes.value;
+  if (newsRes.status    === 'fulfilled') lastNews    = newsRes.value;
+  if (pcrRes.status     === 'fulfilled') lastPCR     = pcrRes.value;
+  if (fiiRes.status     === 'fulfilled') lastFII     = fiiRes.value;
 
   const snap = { ...lastIndices, scanCount, alertCount };
 
