@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANGELONE — Price Analysis & ₹255 Target Scenarios</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1117; color: #e6edf3; font-family: 'Segoe UI', monospace; }
+
+  .header {
+    background: linear-gradient(135deg, #161b22, #1c2333);
+    padding: 20px 30px;
+    border-bottom: 1px solid #30363d;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .header h1 { font-size: 22px; color: #58a6ff; }
+  .header .live-price { font-size: 32px; font-weight: 700; color: #f85149; }
+  .header .meta { font-size: 13px; color: #8b949e; margin-top: 4px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge-red { background: #3d1f1f; color: #f85149; border: 1px solid #f85149; }
+  .badge-green { background: #1a2f1a; color: #3fb950; border: 1px solid #3fb950; }
+  .badge-yellow { background: #2d2a1a; color: #d29922; border: 1px solid #d29922; }
+  .badge-blue { background: #1a2640; color: #58a6ff; border: 1px solid #58a6ff; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+  /* Stats Row */
+  .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 14px; text-align: center;
+  }
+  .stat-card .label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+  .stat-card .value { font-size: 20px; font-weight: 700; margin-top: 6px; }
+  .stat-card .sub { font-size: 11px; color: #8b949e; margin-top: 3px; }
+  .red { color: #f85149; } .green { color: #3fb950; } .yellow { color: #d29922; } .blue { color: #58a6ff; } .purple { color: #bc8cff; }
+
+  /* Chart area */
+  .chart-grid { display: grid; grid-template-columns: 1fr 340px; gap: 16px; margin-bottom: 20px; }
+  .chart-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px;
+  }
+  .chart-card h3 { font-size: 14px; color: #8b949e; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+  .chart-wrapper { position: relative; height: 420px; }
+
+  /* Scenario cards */
+  .scenario { border-radius: 10px; padding: 16px; margin-bottom: 14px; border-left: 4px solid; }
+  .scenario-best  { background: #1a2f1a; border-color: #3fb950; }
+  .scenario-base  { background: #1a2640; border-color: #58a6ff; }
+  .scenario-worst { background: #3d1f1f; border-color: #f85149; }
+  .scenario h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .scenario .prob { font-size: 20px; font-weight: 800; float: right; }
+  .scenario p { font-size: 12px; color: #8b949e; line-height: 1.7; }
+  .scenario .timeline { font-size: 13px; font-weight: 600; margin-top: 8px; }
+
+  /* Resistance road map */
+  .roadmap { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .roadmap h3 { font-size: 14px; color: #8b949e; margin-bottom: 16px; text-transform: uppercase; }
+  .road-item {
+    display: flex; align-items: center; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .road-item:last-child { border-bottom: none; }
+  .road-level { font-size: 18px; font-weight: 700; width: 80px; color: #58a6ff; }
+  .road-bar-wrap { flex: 1; background: #21262d; border-radius: 4px; height: 8px; }
+  .road-bar { height: 8px; border-radius: 4px; }
+  .road-label { font-size: 12px; color: #8b949e; width: 100px; }
+  .road-days { font-size: 12px; color: #d29922; width: 80px; text-align: right; }
+  .road-strength { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+
+  /* Indicator grid */
+  .indicator-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .ind-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px;
+  }
+  .ind-card .ind-name { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+  .ind-card .ind-val  { font-size: 22px; font-weight: 700; margin: 6px 0 4px; }
+  .ind-card .ind-bar  { height: 4px; border-radius: 2px; background: #21262d; margin-bottom: 6px; }
+  .ind-card .ind-fill { height: 4px; border-radius: 2px; }
+  .ind-card .ind-sig  { font-size: 11px; }
+
+  /* Volume chart */
+  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0d1117; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  .section-title { font-size: 16px; font-weight: 700; color: #e6edf3; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #58a6ff; border-radius: 2px; }
+
+  .alert-box { background: #2d2a1a; border: 1px solid #d29922; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; }
+  .alert-box p { font-size: 13px; color: #d29922; line-height: 1.8; }
+
+  footer { text-align: center; padding: 20px; color: #484f58; font-size: 12px; border-top: 1px solid #21262d; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <div style="font-size:13px;color:#8b949e;margin-bottom:4px;">NSE · F&O · Broker: Zerodha</div>
+    <h1>ANGELONE <span style="color:#8b949e;font-weight:400;font-size:16px;">Angel One Ltd</span></h1>
+    <div class="meta">Analysis generated: 06 Mar 2026, 11:52 AM &nbsp;|&nbsp; Target: ₹255 &nbsp;|&nbsp; <span class="badge badge-red">DOWNTREND</span> &nbsp;<span class="badge badge-yellow">RSI EXTREME</span> &nbsp;<span class="badge badge-blue">BOUNCE DUE</span></div>
+  </div>
+  <div style="text-align:right">
+    <div class="live-price">₹220.81</div>
+    <div class="meta" style="color:#f85149">▼ -1.59% &nbsp;|&nbsp; Day: ₹220.37 – ₹230.51</div>
+    <div style="margin-top:8px;font-size:13px;color:#8b949e">Target ₹255 &nbsp;→&nbsp; <span style="color:#3fb950;font-weight:700">+15.4% upside</span></div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- STATS -->
+  <div class="stats-grid" style="margin-top:20px">
+    <div class="stat-card">
+      <div class="label">RSI (14)</div>
+      <div class="value red">12.4</div>
+      <div class="sub">Extreme Oversold</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">ATR (14)</div>
+      <div class="value yellow">₹10.4</div>
+      <div class="sub">Daily range</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Distance to ₹255</div>
+      <div class="value blue">₹34.2</div>
+      <div class="sub">15.4% move needed</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">SuperTrend</div>
+      <div class="value green">BULLISH</div>
+      <div class="sub">Daily timeframe</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">VWAP Gap</div>
+      <div class="value red">-₹31.4</div>
+      <div class="sub">Below VWAP ₹252</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Volume</div>
+      <div class="value yellow">0.62x</div>
+      <div class="sub">Below avg — weak</div>
+    </div>
+  </div>
+
+  <!-- ALERT -->
+  <div class="alert-box">
+    <p>⚠️ <strong>Key Alert:</strong> ANGELONE has fallen 10 consecutive days from ₹280 → ₹221 (-21%). RSI at 12.4 is historically rare and almost always precedes a sharp bounce. However, 5 major resistance walls exist between ₹221 and ₹255. Estimated time: <strong>3–4 weeks (base case)</strong>. Best case: 8–12 trading days if market reverses sharply.</p>
+  </div>
+
+  <!-- MAIN CHART + SCENARIOS -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>📈 Price Chart — Last 60 Days + ₹255 Scenario Projections</h3>
+      <div class="chart-wrapper">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h3>🎯 Scenarios to ₹255</h3>
+
+      <div class="scenario scenario-best">
+        <div class="prob green">35%</div>
+        <h4 class="green">🚀 Best Case — Sharp Reversal</h4>
+        <p>RSI 12 triggers institutional buying. NIFTY stabilizes. Stock gaps up, breaks EMA9 quickly.</p>
+        <div class="timeline green">⏱ 8–12 trading days (~2 weeks)</div>
+        <p style="margin-top:8px">Path: 221 → 233 (3d) → 244 (4d) → 255 (3d)</p>
+      </div>
+
+      <div class="scenario scenario-base">
+        <div class="prob blue">45%</div>
+        <h4 class="blue">📊 Base Case — Gradual Recovery</h4>
+        <p>Slow grind up. Each EMA acts as resistance for 2–3 days. Volume picks up gradually.</p>
+        <div class="timeline blue">⏱ 3–4 weeks (15–20 trading days)</div>
+        <p style="margin-top:8px">Path: 221 → 233 (5d) → 244 (6d) → 252 (5d) → 255 (3d)</p>
+      </div>
+
+      <div class="scenario scenario-worst">
+        <div class="prob red">20%</div>
+        <h4 class="red">💥 Worst Case — Extended Downtrend</h4>
+        <p>₹217.5 support breaks. Stock falls to ₹210–205. Takes months to recover to ₹255.</p>
+        <div class="timeline red">⏱ 2–3 months (if support breaks)</div>
+        <p style="margin-top:8px">Path: 221 → 217 → 210 → slow recovery → 255</p>
+      </div>
+
+      <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-top:4px">
+        <div style="font-size:12px;color:#8b949e;margin-bottom:10px;text-transform:uppercase">Trade Setup for ₹255 Target</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
+          <div><span style="color:#8b949e">Entry:</span> <strong>₹221</strong></div>
+          <div><span style="color:#8b949e">SL:</span> <strong class="red">₹215</strong></div>
+          <div><span style="color:#8b949e">Target:</span> <strong class="green">₹255</strong></div>
+          <div><span style="color:#8b949e">R:R:</span> <strong class="blue">1 : 5.6</strong></div>
+          <div><span style="color:#8b949e">Risk:</span> <strong>₹6/share</strong></div>
+          <div><span style="color:#8b949e">Reward:</span> <strong class="green">₹34/share</strong></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESISTANCE ROADMAP -->
+  <div class="roadmap">
+    <div class="section-title">Resistance Roadmap — Walls to Break on the Way to ₹255</div>
+    <div class="road-item">
+      <div class="road-level">₹221</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600;color:#f85149">📍 CURRENT PRICE</span>
+          <span class="road-strength badge badge-red">Day Low ₹220.37</span>
+        </div>
+        <div class="road-bar-wrap"><div class="road-bar" style="width:0%;background:#f85149"></div></div>
+      </div>
+      <div class="road-days">NOW</div>
+    </div>
+    <div class="road-item">
+      <div class="road-level">₹226</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600">Today's Open Price</span>
+          <span class="road-strength badge badge-yellow">MODERATE</span>
+        </div>
+        <div class="road-bar-wrap"><div class="road-bar" style="width:15%;background:#d29922"></div></div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">+₹5 from current | Intraday resistance</div>
+      </div>
+      <div class="road-days">1–2 days</div>
+    </div>
+    <div class="road-item">
+      <div class="road-level">₹233</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600">EMA 9 (Short-term trend)</span>
+          <span class="road-strength badge badge-yellow">STRONG</span>
+        </div>
+        <div class="road-bar-wrap"><div class="road-bar" style="width:35%;background:#d29922"></div></div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">+₹12 from current | Must close above 2 days</div>
+      </div>
+      <div class="road-days">3–5 days</div>
+    </div>
+    <div class="road-item">
+      <div class="road-level">₹244</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600">EMA 21 (Medium-term trend)</span>
+          <span class="road-strength badge badge-red">VERY STRONG</span>
+        </div>
+        <div class="road-bar-wrap"><div class="road-bar" style="width:55%;background:#f85149"></div></div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">+₹23 from current | Previous support turned resistance</div>
+      </div>
+      <div class="road-days">8–12 days</div>
+    </div>
+    <div class="road-item">
+      <div class="road-level" style="color:#f85149">₹251</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600">SMA50 + BB Middle + VWAP CLUSTER 🔴</span>
+          <span class="road-strength badge badge-red">HARDEST WALL</span>
+        </div>
+        <div class="road-bar-wrap"><div class="road-bar" style="width:85%;background:#f85149"></div></div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">SMA50: ₹250.7 | BB Mid: ₹251.4 | VWAP: ₹252.2 — Triple resistance</div>
+      </div>
+      <div class="road-days">15–18 days</div>
+    </div>
+    <div class="road-item">
+      <div class="road-level green">₹255</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600;color:#3fb950">🎯 TARGET — ₹255</span>
+          <span class="road-strength badge badge-green">PROFIT ZONE</span>
+        </div>
+        <div class="road-bar-wrap"><div class="road-bar" style="width:100%;background:#3fb950"></div></div>
+        <div style="font-size:11px;color:#3fb950;margin-top:4px">Historical price zone (Dec 2025 traded here) | +15.4% from current</div>
+      </div>
+      <div class="road-days green">18–22 days</div>
+    </div>
+  </div>
+
+  <!-- INDICATORS -->
+  <div class="section-title">Technical Indicators</div>
+  <div class="indicator-grid">
+    <div class="ind-card">
+      <div class="ind-name">RSI (14 Days)</div>
+      <div class="ind-val red">12.4</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:12.4%;background:#f85149"></div></div>
+      <div class="ind-sig red">⚠️ EXTREME OVERSOLD — bounce imminent</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">Bollinger Bands</div>
+      <div class="ind-val yellow">8% position</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:8%;background:#d29922"></div></div>
+      <div class="ind-sig">Upper ₹287 | Mid ₹251 | Lower ₹215</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">MACD</div>
+      <div class="ind-val red">Negative</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:20%;background:#f85149"></div></div>
+      <div class="ind-sig red">Histogram below zero — bearish momentum</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">EMA 9 / 21 / SMA 50</div>
+      <div class="ind-val red">All above</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:100%;background:#f85149"></div></div>
+      <div class="ind-sig red">₹233 / ₹244 / ₹250 — full bearish alignment</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">SuperTrend (Daily)</div>
+      <div class="ind-val green">BULLISH</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:70%;background:#3fb950"></div></div>
+      <div class="ind-sig green">Daily SuperTrend still in bull zone</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">VWAP (20d avg)</div>
+      <div class="ind-val red">₹252.2</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:40%;background:#f85149"></div></div>
+      <div class="ind-sig red">Price ₹31.4 below VWAP — very extended</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">ATR (14)</div>
+      <div class="ind-val yellow">₹10.4/day</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:55%;background:#d29922"></div></div>
+      <div class="ind-sig">Volatility: HIGH | Days to ₹255 at ATR: 3.3d</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">Support / Resistance</div>
+      <div class="ind-val blue">₹217 / ₹280</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:50%;background:#58a6ff"></div></div>
+      <div class="ind-sig">Support: ₹217.5 | Resistance: ₹280.9</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-name">Candlestick Pattern</div>
+      <div class="ind-val red">Bear Engulf</div>
+      <div class="ind-bar"><div class="ind-fill" style="width:80%;background:#f85149"></div></div>
+      <div class="ind-sig red">Bearish Engulfing (STRONG) — recent</div>
+    </div>
+  </div>
+
+  <!-- BOTTOM CHARTS -->
+  <div class="bottom-grid">
+    <div class="chart-card">
+      <h3>📊 Volume Analysis (Last 30 Days)</h3>
+      <div class="chart-wrapper" style="height:220px">
+        <canvas id="volumeChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>⏱ Time-to-Target Probability Chart</h3>
+      <div class="chart-wrapper" style="height:220px">
+        <canvas id="probChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  ANGELONE Analysis · AI Trading Bot · NSE Data · 06 Mar 2026 · For educational/paper trading purposes only · Not financial advice
+</footer>
+
+<script>
+const raw = [{"date":"2025-12-10","open":"253.49","high":"255.00","low":"246.00","close":"247.83","volume":5074700},{"date":"2025-12-11","open":"249.00","high":"258.39","low":"246.45","close":"257.74","volume":6387200},{"date":"2025-12-12","open":"258.80","high":"260.46","low":"256.00","close":"259.53","volume":4251750},{"date":"2025-12-15","open":"258.00","high":"260.80","low":"256.00","close":"258.25","volume":3113300},{"date":"2025-12-16","open":"257.79","high":"258.11","low":"252.21","close":"253.24","volume":3664580},{"date":"2025-12-17","open":"254.30","high":"255.00","low":"249.10","close":"250.46","volume":3117110},{"date":"2025-12-18","open":"251.00","high":"255.49","low":"246.85","close":"247.91","volume":6945930},{"date":"2025-12-19","open":"249.00","high":"252.49","low":"244.91","close":"251.81","volume":5882390},{"date":"2025-12-22","open":"251.83","high":"259.24","low":"251.48","close":"258.16","volume":5204940},{"date":"2025-12-23","open":"258.19","high":"258.53","low":"253.97","close":"255.71","volume":2980770},{"date":"2025-12-24","open":"255.00","high":"257.60","low":"252.01","close":"252.38","volume":4103740},{"date":"2025-12-26","open":"252.18","high":"254.71","low":"248.47","close":"249.58","volume":4546020},{"date":"2025-12-29","open":"249.42","high":"249.87","low":"240.30","close":"241.02","volume":7748280},{"date":"2025-12-30","open":"240.67","high":"241.59","low":"232.50","close":"234.71","volume":26506320},{"date":"2025-12-31","open":"237.48","high":"239.50","low":"233.10","close":"234.40","volume":9235500},{"date":"2026-01-01","open":"235.20","high":"237.50","low":"232.07","close":"236.28","volume":4741630},{"date":"2026-01-02","open":"237.50","high":"240.27","low":"235.70","close":"238.79","volume":10528170},{"date":"2026-01-05","open":"238.01","high":"242.70","low":"236.64","close":"240.20","volume":8713630},{"date":"2026-01-06","open":"240.70","high":"245.47","low":"239.03","close":"241.13","volume":4629730},{"date":"2026-01-07","open":"240.00","high":"248.19","low":"239.13","close":"247.06","volume":5538330},{"date":"2026-01-08","open":"251.00","high":"251.74","low":"239.81","close":"241.26","volume":15384520},{"date":"2026-01-09","open":"242.43","high":"242.92","low":"231.30","close":"233.35","volume":8076880},{"date":"2026-01-12","open":"233.50","high":"237.50","low":"229.76","close":"236.85","volume":10082490},{"date":"2026-01-13","open":"237.80","high":"245.50","low":"237.50","close":"243.93","volume":13289860},{"date":"2026-01-14","open":"244.51","high":"253.20","low":"243.50","close":"252.54","volume":13136700},{"date":"2026-01-15","open":"252.54","high":"252.54","low":"252.54","close":"252.54","volume":0},{"date":"2026-01-16","open":"258.80","high":"276.67","low":"258.00","close":"275.22","volume":55827430},{"date":"2026-01-19","open":"276.50","high":"277.86","low":"268.04","close":"269.51","volume":11729640},{"date":"2026-01-20","open":"269.40","high":"269.41","low":"262.40","close":"263.58","volume":9102660},{"date":"2026-01-21","open":"260.90","high":"262.96","low":"251.80","close":"253.19","volume":11161270},{"date":"2026-01-22","open":"255.72","high":"260.69","low":"254.10","close":"256.66","volume":5881280},{"date":"2026-01-23","open":"256.66","high":"260.49","low":"250.12","close":"251.51","volume":5221560},{"date":"2026-01-27","open":"251.52","high":"256.00","low":"249.20","close":"254.31","volume":4427180},{"date":"2026-01-28","open":"255.98","high":"262.18","low":"255.66","close":"261.51","volume":5725260},{"date":"2026-01-29","open":"261.51","high":"263.80","low":"256.39","close":"258.84","volume":2995410},{"date":"2026-01-30","open":"257.50","high":"259.84","low":"251.10","close":"254.09","volume":4866930},{"date":"2026-02-02","open":"231.30","high":"241.75","low":"225.61","close":"240.13","volume":18168120},{"date":"2026-02-03","open":"250.00","high":"266.39","low":"250.00","close":"258.78","volume":28163760},{"date":"2026-02-04","open":"259.00","high":"269.50","low":"256.67","close":"268.67","volume":13908870},{"date":"2026-02-05","open":"266.50","high":"268.23","low":"262.61","close":"264.50","volume":6045840},{"date":"2026-02-06","open":"261.81","high":"264.85","low":"256.52","close":"264.20","volume":4696710},{"date":"2026-02-09","open":"265.20","high":"272.46","low":"264.99","close":"271.55","volume":7042250},{"date":"2026-02-10","open":"272.40","high":"280.87","low":"271.62","close":"278.30","volume":8707300},{"date":"2026-02-11","open":"278.00","high":"280.00","low":"276.41","close":"278.11","volume":4851220},{"date":"2026-02-12","open":"276.80","high":"276.80","low":"270.53","close":"275.20","volume":4584230},{"date":"2026-02-13","open":"270.90","high":"273.34","low":"266.98","close":"269.83","volume":6035930},{"date":"2026-02-16","open":"252.99","high":"260.00","low":"244.10","close":"257.28","volume":19960020},{"date":"2026-02-17","open":"256.51","high":"260.99","low":"254.14","close":"257.02","volume":8822550},{"date":"2026-02-18","open":"258.30","high":"265.48","low":"257.59","close":"259.18","volume":9071110},{"date":"2026-02-19","open":"260.90","high":"262.50","low":"250.22","close":"250.96","volume":8535370},{"date":"2026-02-20","open":"250.90","high":"254.39","low":"248.25","close":"249.63","volume":6749490},{"date":"2026-02-23","open":"252.40","high":"253.00","low":"246.80","close":"249.13","volume":5263350},{"date":"2026-02-24","open":"249.11","high":"249.53","low":"245.40","close":"246.02","volume":5684490},{"date":"2026-02-25","open":"247.40","high":"250.40","low":"241.50","close":"248.99","volume":9476560},{"date":"2026-02-26","open":"251.00","high":"254.90","low":"241.40","close":"246.50","volume":7992020},{"date":"2026-02-27","open":"242.10","high":"244.20","low":"229.90","close":"233.20","volume":8282159},{"date":"2026-03-02","open":"220.10","high":"231.62","low":"220.00","close":"226.32","volume":7012943},{"date":"2026-03-04","open":"222.20","high":"223.25","low":"217.52","close":"221.75","volume":5600383},{"date":"2026-03-05","open":"223.80","high":"225.88","low":"220.74","close":"224.68","volume":4622589},{"date":"2026-03-06","open":"226.50","high":"230.51","low":"220.37","close":"220.95","volume":4616915}];
+
+const labels = raw.map(d => d.date.slice(5)); // MM-DD
+const closes = raw.map(d => parseFloat(d.close));
+const volumes = raw.map(d => d.volume);
+const n = raw.length;
+
+// Future projection labels (next 22 trading days)
+const futureDays = 22;
+const futureLabels = [];
+for (let i = 1; i <= futureDays; i++) futureLabels.push(`+${i}d`);
+const allLabels = [...labels, ...futureLabels];
+
+// Scenario projections from current ₹220.81
+const current = 220.81;
+const target = 255;
+
+// Best case: reaches 255 in 12 days
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+const bestCase = new Array(n).fill(null);
+for (let i = 0; i < 12; i++) bestCase.push(lerp(current, target, i/11));
+for (let i = 12; i < futureDays; i++) bestCase.push(target);
+
+const baseCase = new Array(n).fill(null);
+for (let i = 0; i < 20; i++) baseCase.push(lerp(current, target, i/19));
+for (let i = 20; i < futureDays; i++) baseCase.push(target);
+
+const worstCase = new Array(n).fill(null);
+const worstPath = [220.81,218,215,213,218,222,219,221,225,228,232,230,234,237,233,236,240,244,248,251,253,255];
+for (let i = 0; i < futureDays; i++) worstCase.push(worstPath[i] || 255);
+
+// Historical close line (only for past)
+const histLine = closes.map(c => c);
+for (let i = 0; i < futureDays; i++) histLine.push(null);
+
+// Resistance levels as horizontal lines
+const resistances = {
+  ema9:    233.4,
+  ema21:   244.2,
+  sma50:   250.7,
+  vwap:    252.2,
+  target:  255,
+  support: 217.5,
+  current: 220.81,
+};
+
+// Price Chart
+const ctx = document.getElementById('priceChart').getContext('2d');
+Chart.register(window['chartjs-plugin-annotation']);
+
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: allLabels,
+    datasets: [
+      {
+        label: 'Historical Close',
+        data: histLine,
+        borderColor: '#58a6ff',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointBackgroundColor: '#58a6ff',
+        tension: 0.3,
+        fill: false,
+      },
+      {
+        label: '🚀 Best Case (35%) — 12 days',
+        data: bestCase,
+        borderColor: '#3fb950',
+        borderWidth: 2.5,
+        borderDash: [6, 3],
+        pointRadius: 0,
+        tension: 0.4,
+        fill: false,
+      },
+      {
+        label: '📊 Base Case (45%) — 3–4 weeks',
+        data: baseCase,
+        borderColor: '#58a6ff',
+        borderWidth: 2.5,
+        borderDash: [6, 3],
+        pointRadius: 0,
+        tension: 0.4,
+        fill: false,
+      },
+      {
+        label: '💥 Worst Case (20%) — 2–3 months',
+        data: worstCase,
+        borderColor: '#f85149',
+        borderWidth: 2.5,
+        borderDash: [4, 4],
+        pointRadius: 0,
+        tension: 0.4,
+        fill: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 24 },
+        position: 'top'
+      },
+      annotation: {
+        annotations: {
+          target: { type:'line', yMin:255, yMax:255, borderColor:'#3fb950', borderWidth:2, borderDash:[8,4],
+            label:{ content:'🎯 TARGET ₹255', display:true, position:'end', color:'#3fb950', backgroundColor:'rgba(0,0,0,0.7)', font:{size:11} }},
+          ema9: { type:'line', yMin:233.4, yMax:233.4, borderColor:'#d29922', borderWidth:1, borderDash:[4,4],
+            label:{ content:'EMA9 ₹233', display:true, position:'start', color:'#d29922', backgroundColor:'rgba(0,0,0,0.7)', font:{size:10} }},
+          ema21: { type:'line', yMin:244.2, yMax:244.2, borderColor:'#d29922', borderWidth:1, borderDash:[4,4],
+            label:{ content:'EMA21 ₹244', display:true, position:'start', color:'#d29922', backgroundColor:'rgba(0,0,0,0.7)', font:{size:10} }},
+          sma50: { type:'line', yMin:250.7, yMax:250.7, borderColor:'#f85149', borderWidth:1.5, borderDash:[4,4],
+            label:{ content:'SMA50+VWAP ₹251', display:true, position:'start', color:'#f85149', backgroundColor:'rgba(0,0,0,0.7)', font:{size:10} }},
+          support: { type:'line', yMin:217.5, yMax:217.5, borderColor:'#bc8cff', borderWidth:1.5, borderDash:[4,4],
+            label:{ content:'Support ₹217.5', display:true, position:'end', color:'#bc8cff', backgroundColor:'rgba(0,0,0,0.7)', font:{size:10} }},
+          currentPrice: { type:'line', yMin:220.81, yMax:220.81, borderColor:'#ffffff', borderWidth:1, borderDash:[2,4],
+            label:{ content:'NOW ₹221', display:true, position:'center', color:'#fff', backgroundColor:'rgba(0,0,0,0.7)', font:{size:10} }},
+          divider: { type:'line', xMin: n-1, xMax: n-1, borderColor:'#484f58', borderWidth:1, borderDash:[6,3],
+            label:{ content:'TODAY', display:true, position:'start', color:'#8b949e', backgroundColor:'rgba(0,0,0,0.7)', font:{size:10} }},
+        }
+      },
+      tooltip: {
+        backgroundColor: '#161b22',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        titleColor: '#8b949e',
+        bodyColor: '#e6edf3',
+        callbacks: {
+          label: ctx => ctx.parsed.y ? `${ctx.dataset.label}: ₹${ctx.parsed.y.toFixed(1)}` : null
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color:'#8b949e', font:{size:10}, maxTicksLimit:15 },
+        grid: { color:'#21262d' }
+      },
+      y: {
+        ticks: { color:'#8b949e', font:{size:11}, callback: v => '₹'+v },
+        grid: { color:'#21262d' },
+        min: 200, max: 270
+      }
+    }
+  }
+});
+
+// Volume Chart
+const volCtx = document.getElementById('volumeChart').getContext('2d');
+const last30vols = volumes.slice(-30);
+const last30labels = labels.slice(-30);
+const avgVol = last30vols.reduce((a,b)=>a+b,0)/last30vols.length;
+new Chart(volCtx, {
+  type: 'bar',
+  data: {
+    labels: last30labels,
+    datasets: [{
+      label: 'Volume',
+      data: last30vols.map(v => v/1e6),
+      backgroundColor: last30vols.map((v,i) => {
+        const c = parseFloat(raw.slice(-30)[i].close);
+        const o = parseFloat(raw.slice(-30)[i].open);
+        return c >= o ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)';
+      }),
+      borderRadius: 3,
+    },{
+      label: 'Avg Volume',
+      data: last30vols.map(() => avgVol/1e6),
+      type: 'line',
+      borderColor: '#d29922',
+      borderWidth: 1.5,
+      borderDash: [4,3],
+      pointRadius: 0,
+      fill: false,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { labels:{ color:'#8b949e', font:{size:10} } },
+      tooltip: { backgroundColor:'#161b22', borderColor:'#30363d', borderWidth:1, titleColor:'#8b949e', bodyColor:'#e6edf3',
+        callbacks:{ label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}M` }
+      }
+    },
+    scales: {
+      x: { ticks:{ color:'#8b949e', font:{size:9}, maxTicksLimit:8 }, grid:{ color:'#21262d' } },
+      y: { ticks:{ color:'#8b949e', font:{size:10}, callback: v=>v+'M' }, grid:{ color:'#21262d' } }
+    }
+  }
+});
+
+// Probability Chart
+const probCtx = document.getElementById('probChart').getContext('2d');
+new Chart(probCtx, {
+  type: 'bar',
+  data: {
+    labels: ['Best Case\n(2 weeks)', 'Base Case\n(3–4 weeks)', 'Worst Case\n(2–3 months)'],
+    datasets: [{
+      label: 'Probability',
+      data: [35, 45, 20],
+      backgroundColor: ['rgba(63,185,80,0.8)', 'rgba(88,166,255,0.8)', 'rgba(248,81,73,0.8)'],
+      borderColor:      ['#3fb950',             '#58a6ff',              '#f85149'],
+      borderWidth: 1.5,
+      borderRadius: 6,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor:'#161b22', borderColor:'#30363d', borderWidth:1, titleColor:'#8b949e', bodyColor:'#e6edf3',
+        callbacks:{ label: ctx => `Probability: ${ctx.parsed.y}%` }
+      }
+    },
+    scales: {
+      x: { ticks:{ color:'#8b949e', font:{size:11} }, grid:{ color:'#21262d' } },
+      y: { ticks:{ color:'#8b949e', callback: v=>v+'%' }, grid:{ color:'#21262d' }, max:60,
+           title:{ display:true, text:'Probability %', color:'#8b949e', font:{size:11} }
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
