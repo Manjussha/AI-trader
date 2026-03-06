@@ -118,25 +118,59 @@ export class GrowwClient {
   // ─── NSE India public market data ───────────────────────────────────────
   async _getNseCookies() {
     if (this._nseCookies) return this._nseCookies;
-    const res = await fetch('https://www.nseindia.com', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    const raw = res.headers.get('set-cookie') || '';
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+    // Two-step: homepage then market-data page to collect full cookie set
+    const r1 = await fetch('https://www.nseindia.com', { headers: { 'User-Agent': UA, 'Accept': 'text/html' } });
+    const r2 = await fetch('https://www.nseindia.com/market-data/live-equity-market', { headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Referer': 'https://www.nseindia.com/' } });
+    const raw = [r1.headers.get('set-cookie') || '', r2.headers.get('set-cookie') || ''].join(',');
     this._nseCookies = raw.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
     return this._nseCookies;
   }
 
   async _nseRequest(path) {
     const cookies = await this._getNseCookies();
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
     const res = await fetch(`${NSE}${path}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': UA,
         'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://www.nseindia.com/',
+        'X-Requested-With': 'XMLHttpRequest',
         'Cookie': cookies,
       }
     });
-    return res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return {}; }
+  }
+
+  // Option chain — puppeteer intercepts option-chain-v3 XHR made by the NSE page
+  async _nseOptionChain(symbol, isIndex = true) {
+    let browser;
+    try {
+      const puppeteer = (await import('puppeteer')).default;
+      browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+      const page = await browser.newPage();
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+
+      let chainData = null;
+      page.on('response', async res => {
+        const url = res.url();
+        if (url.includes('option-chain-v3') && url.includes(encodeURIComponent(symbol))) {
+          try { chainData = await res.json(); } catch {}
+        }
+      });
+
+      await page.goto('https://www.nseindia.com/option-chain', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      // Wait for the XHR to complete (page loads it on startup)
+      await new Promise(r => setTimeout(r, 6000));
+
+      return chainData || { error: 'No option chain data received' };
+    } catch (e) {
+      return { error: e.message };
+    } finally {
+      if (browser) await browser.close().catch(() => {});
+    }
   }
 
   // ─── ACCOUNT ─────────────────────────────────────────────────────────────

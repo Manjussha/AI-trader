@@ -8,19 +8,19 @@
  *   const oi = await getOILevels(nseGet, 'NIFTY');
  */
 
-export async function getOILevels(nseGet, symbol = 'NIFTY') {
+export async function getOILevels(nseOptionChain, symbol = 'NIFTY') {
   try {
-    const data      = await nseGet(`/option-chain-indices?symbol=${encodeURIComponent(symbol)}`);
+    const data      = await nseOptionChain(symbol, true);
     const allRec    = data?.records?.data || [];
     const spot      = data?.records?.underlyingValue;
     const expiries  = data?.records?.expiryDates || [];
     const nearExpiry = expiries[0];
 
-    // Use nearest expiry for cleaner OI picture
-    const records = allRec.filter(r => r.expiryDate === nearExpiry);
+    // Use nearest expiry — v3 API uses 'expiryDates' (plural) on each record
+    const records = allRec.filter(r => (r.expiryDates || r.expiryDate) === nearExpiry);
 
     const strikes = records.map(item => ({
-      strike:     item.strikePrice,
+      strike:     item.strikePrice ?? item.CE?.strikePrice ?? item.PE?.strikePrice,
       ceOI:       item.CE?.openInterest        || 0,
       ceOIChg:    item.CE?.changeinOpenInterest || 0,
       ceLTP:      item.CE?.lastPrice           || 0,

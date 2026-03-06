@@ -338,8 +338,7 @@ async function cmdLosers() {
 
 async function cmdFII() {
   hdr('FII / DII Activity (Last 5 Days)');
-  const nseGet = market._nseRequest.bind(market);
-  const data   = await getFIIDII(nseGet);
+  const data   = await getFIIDII(market._nseRequest.bind(market));
   if (!data) { err('Could not fetch FII/DII data'); return; }
 
   const bias = data.marketBias === 'BULLISH' ? C.green : C.red;
@@ -364,8 +363,8 @@ async function cmdFII() {
 
 async function cmdPCR(symbol = 'NIFTY') {
   hdr(`Put-Call Ratio — ${symbol.toUpperCase()}`);
-  const nseGet = market._nseRequest.bind(market);
-  const data   = await getPCR(nseGet, symbol.toUpperCase());
+  inf('Fetching option chain (may take a moment)...');
+  const data   = await getPCR(market._nseOptionChain.bind(market), symbol.toUpperCase());
   if (!data) { err('Could not fetch option chain data'); return; }
 
   const sc = data.sentiment === 'BULLISH' ? C.green : data.sentiment === 'BEARISH' ? C.red : C.yellow;
@@ -380,9 +379,8 @@ async function cmdPCR(symbol = 'NIFTY') {
 
 async function cmdOI(symbol = 'NIFTY') {
   hdr(`Open Interest Analysis — ${symbol.toUpperCase()}`);
-  inf('Fetching option chain...');
-  const nseGet = market._nseRequest.bind(market);
-  const data   = await getOILevels(nseGet, symbol.toUpperCase());
+  inf('Fetching option chain (may take a moment)...');
+  const data   = await getOILevels(market._nseOptionChain.bind(market), symbol.toUpperCase());
   if (!data || data.error) { err(data?.error || 'Could not fetch OI data'); return; }
 
   const bc = data.bias === 'BULLISH' ? C.green : data.bias === 'BEARISH' ? C.red : C.yellow;

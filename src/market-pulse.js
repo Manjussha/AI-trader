@@ -52,9 +52,9 @@ export async function getFIIDII(nseGet) {
  * PCR > 1.2 → market oversold (bullish reversal likely)
  * PCR < 0.7 → market overbought (bearish reversal likely)
  */
-export async function getPCR(nseGet, symbol = 'NIFTY') {
+export async function getPCR(nseOptionChain, symbol = 'NIFTY') {
   try {
-    const data    = await nseGet(`/option-chain-indices?symbol=${encodeURIComponent(symbol)}`);
+    const data    = await nseOptionChain(symbol, true);
     const records = data?.records?.data || [];
     const spot    = data?.records?.underlyingValue;
 
