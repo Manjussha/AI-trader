@@ -5,12 +5,12 @@
  * Takes 20-30s to run, but then all quick commands are instant (<2s)
  */
 import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { GrowwClient } from './src/groww-client.js';
+import { GrowwClient } from '../src/groww-client.js';
 import { rsi, macd, bollingerBands, atr, superTrend, vwap,
-         supportResistance, ema, sma, stochastic, generateSignal } from './src/analytics.js';
-import { scanPatterns } from './src/patterns.js';
+         supportResistance, ema, sma, stochastic, generateSignal } from '../src/analytics.js';
+import { scanPatterns } from '../src/patterns.js';
 
-const CACHE_FILE = './cache.json';
+const CACHE_FILE = '../data/cache.json';
 const WATCHLIST  = [
   'NIFTY',                                          // index
   'TECHM','WIPRO','BEL','NTPC',                     // current holdings

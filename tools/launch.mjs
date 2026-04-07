@@ -14,7 +14,7 @@ import { readFileSync, existsSync } from 'fs';
 
 const args    = process.argv.slice(2);
 const stocks  = args.length > 0 ? args.map(s=>s.toUpperCase()) : ['TECHM','WIPRO','BEL','NTPC'];
-const cache   = existsSync('./cache.json') ? JSON.parse(readFileSync('./cache.json','utf8')) : {};
+const cache   = existsSync('../data/cache.json') ? JSON.parse(readFileSync('../data/cache.json','utf8')) : {};
 const cwd     = process.cwd().replace(/\\/g, '/');
 
 // Check if Windows Terminal is available
@@ -22,8 +22,8 @@ let hasWT = false;
 try { execSync('where wt', { stdio:'ignore' }); hasWT = true; } catch(e) {}
 
 // Check if portfolio-view and stock-view exist
-const pvExists = existsSync('./portfolio-view.mjs');
-const svExists = existsSync('./stock-view.mjs');
+const pvExists = existsSync('../dashboards/portfolio-view.mjs');
+const svExists = existsSync('../dashboards/stock-view.mjs');
 
 console.log('\n🚀 AI TRADING LAUNCHER');
 console.log('─────────────────────────────');
@@ -52,14 +52,14 @@ if (hasWT) {
     `new-tab`,
     `--title`, `"📊 PORTFOLIO"`,
     `--colorScheme`, `"One Half Dark"`,
-    `cmd`, `/k`, `"cd /d "${process.cwd()}" && node portfolio-view.mjs"`,
+    `cmd`, `/k`, `"cd /d "${process.cwd()}" && node dashboards/portfolio-view.mjs"`,
 
     // Split: NIFTY view (top right)
     `;`, `split-pane`,
     `--title`, `"⚡ NIFTY"`,
     `-H`, // horizontal split
     `--size`, `0.6`,
-    `cmd`, `/k`, `"cd /d "${process.cwd()}" && node stock-view.mjs NIFTY_INDEX"`,
+    `cmd`, `/k`, `"cd /d "${process.cwd()}" && node dashboards/stock-view.mjs NIFTY_INDEX"`,
   ];
 
   // Add stock panes
@@ -73,7 +73,7 @@ if (hasWT) {
       `;`, `split-pane`,
       `--title`, `"${sym}"`,
       `-H`,
-      `cmd`, `/k`, `"cd /d "${process.cwd()}" && node stock-view.mjs ${sym} ${entry} ${sl} ${t1} ${t2}"`
+      `cmd`, `/k`, `"cd /d "${process.cwd()}" && node dashboards/stock-view.mjs ${sym} ${entry} ${sl} ${t1} ${t2}"`
     );
   });
 
@@ -96,7 +96,7 @@ function fallback() {
   console.log('Opening separate CMD windows...\n');
 
   // Portfolio window
-  spawn('cmd', ['/c', `start "PORTFOLIO" cmd /k "cd /d "${process.cwd()}" && node portfolio-view.mjs"`],
+  spawn('cmd', ['/c', `start "PORTFOLIO" cmd /k "cd /d "${process.cwd()}" && node dashboards/portfolio-view.mjs"`],
     { shell: true, detached: true, stdio: 'ignore' }).unref();
   console.log('✓ Portfolio window opened');
 
@@ -108,7 +108,7 @@ function fallback() {
     const t1    = c?.levels?.t1    || '';
     const t2    = c?.levels?.t2    || '';
     setTimeout(() => {
-      spawn('cmd', ['/c', `start "${sym}" cmd /k "cd /d "${process.cwd()}" && node stock-view.mjs ${sym} ${entry} ${sl} ${t1} ${t2}"`],
+      spawn('cmd', ['/c', `start "${sym}" cmd /k "cd /d "${process.cwd()}" && node dashboards/stock-view.mjs ${sym} ${entry} ${sl} ${t1} ${t2}"`],
         { shell: true, detached: true, stdio: 'ignore' }).unref();
       console.log(`✓ ${sym} window opened`);
     }, (i + 1) * 500);
@@ -120,8 +120,8 @@ function fallback() {
 }
 
 console.log('\n📋 Manual commands if needed:');
-console.log(`  node portfolio-view.mjs`);
+console.log(`  node dashboards/portfolio-view.mjs`);
 stocks.forEach(sym => {
   const c = cache.stocks?.[sym];
-  console.log(`  node stock-view.mjs ${sym} ${c?.levels?.entry||''} ${c?.levels?.sl||''} ${c?.levels?.t1||''}`);
+  console.log(`  node dashboards/stock-view.mjs ${sym} ${c?.levels?.entry||''} ${c?.levels?.sl||''} ${c?.levels?.t1||''}`);
 });

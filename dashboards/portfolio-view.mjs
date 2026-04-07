@@ -2,8 +2,8 @@
  * PORTFOLIO TERMINAL VIEW — Live P&L + NIFTY Overview
  * Usage: node portfolio-view.mjs
  */
-import { GrowwClient } from './src/groww-client.js';
-import { getPortfolio } from './src/paper-trade.js';
+import { GrowwClient } from '../src/groww-client.js';
+import { getPortfolio } from '../src/paper-trade.js';
 
 const market = new GrowwClient({ apiKey: '', totpSecret: '' });
 

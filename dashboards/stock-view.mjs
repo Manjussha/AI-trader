@@ -3,9 +3,9 @@
  * Usage: node stock-view.mjs TECHM
  *        node stock-view.mjs TECHM 1343 1246 1487   (entry sl t1)
  */
-import { GrowwClient } from './src/groww-client.js';
+import { GrowwClient } from '../src/groww-client.js';
 import { readFileSync, existsSync } from 'fs';
-import { rsi, ema, bollingerBands, atr } from './src/analytics.js';
+import { rsi, ema, bollingerBands, atr } from '../src/analytics.js';
 
 const market  = new GrowwClient({ apiKey: '', totpSecret: '' });
 const args    = process.argv.slice(2);
@@ -16,7 +16,7 @@ const T1      = parseFloat(args[3]) || null;
 const T2      = parseFloat(args[4]) || null;
 
 // Load from cache if no args
-const cache   = existsSync('./cache.json') ? JSON.parse(readFileSync('./cache.json','utf8')) : {};
+const cache   = existsSync('../data/cache.json') ? JSON.parse(readFileSync('../data/cache.json','utf8')) : {};
 const cached  = cache.stocks?.[SYMBOL];
 const entryP  = ENTRY || cached?.levels?.entry || null;
 const slP     = SL    || cached?.levels?.sl    || null;

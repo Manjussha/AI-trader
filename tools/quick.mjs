@@ -11,10 +11,10 @@
  *   node quick.mjs close PE        → close NIFTY PE
  */
 import { readFileSync, existsSync } from 'fs';
-import { GrowwClient } from './src/groww-client.js';
-import { paperBuy, paperSell, paperSellOption, getPortfolio } from './src/paper-trade.js';
+import { GrowwClient } from '../src/groww-client.js';
+import { paperBuy, paperSell, paperSellOption, getPortfolio } from '../src/paper-trade.js';
 
-const CACHE_FILE = './cache.json';
+const CACHE_FILE = '../data/cache.json';
 const market     = new GrowwClient({ apiKey: '', totpSecret: '' });
 const args       = process.argv.slice(2);
 const cmd        = args[0]?.toUpperCase();

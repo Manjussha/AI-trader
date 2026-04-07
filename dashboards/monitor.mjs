@@ -5,8 +5,8 @@
  *
  * Usage: node monitor.mjs
  */
-import { GrowwClient } from './src/groww-client.js';
-import { getPortfolio } from './src/paper-trade.js';
+import { GrowwClient } from '../src/groww-client.js';
+import { getPortfolio } from '../src/paper-trade.js';
 import { readFileSync, existsSync } from 'fs';
 
 const market = new GrowwClient({ apiKey: '', totpSecret: '' });
@@ -329,7 +329,7 @@ if (process.stdin.isTTY) {
     if (key === 'r') {
       w('\n' + col(C.yellow, ' Refreshing cache...\n'));
       const { execSync } = await import('child_process');
-      try { execSync('node cache-refresh.mjs', { timeout: 60000 }); }
+      try { execSync('node tools/cache-refresh.mjs', { timeout: 60000 }); }
       catch(e) {}
       await render();
     }
@@ -338,7 +338,7 @@ if (process.stdin.isTTY) {
       const niftyPrice = parseFloat(liveIdx?.data?.[0]?.lastPrice);
       const spotDiff   = niftyPrice - 24612;
       const peNow      = Math.max(5, 155 + 0.50 * (-spotDiff));
-      const { paperSellOption } = await import('./src/paper-trade.js');
+      const { paperSellOption } = await import('../src/paper-trade.js');
       const r = paperSellOption({ symbol:'NIFTY', strike:24600, type:'PE', expiry:'27-Mar-2026', currentPremium: parseFloat(peNow.toFixed(1)), note:'Monitor close' });
       state.alerts.unshift({ type: r.success ? 'PROFIT' : 'DANGER', msg: r.success ? `✅ PE closed @ ₹${peNow.toFixed(1)} | P&L: ₹${r.realizedPnl}` : `❌ ${r.error}` });
       await render();

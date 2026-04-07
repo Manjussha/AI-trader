@@ -7,19 +7,43 @@ Always think like a professional prop trader — specific levels, risk managemen
 ## Project Layout
 
 ```
-trading-bot.mjs      — autonomous scanner (npm run bot / npm run bot:paper)
-cli.mjs              — interactive terminal REPL (npm run cli)
-advisor-run.mjs      — standalone AI advisor
-src/
-  analytics.js       — RSI, MACD, BB, ATR, VWAP, SuperTrend, Stochastic, Williams %R
-  patterns.js        — 22 candlestick patterns
-  greeks.js          — Black-Scholes Greeks + IV + Max Pain
-  paper-trade.js     — virtual portfolio (paper-portfolio.json)
-  trade-journal.js   — trade log with stats (trade-journal.json)
-  history-analyzer.js— historical similarity matching
-  groww-client.js    — NSE/Yahoo Finance data + Groww broker API
-  brokers/           — AngelOne, Zerodha, Upstox broker adapters
-  telegram.js        — Telegram bot (alerts + two-way control)
+trading-bot.mjs          — autonomous scanner (npm run bot / npm run bot:paper)
+cli.mjs                  — interactive terminal REPL (npm run cli)
+
+src/                     — core modules
+  analytics.js           — RSI, MACD, BB, ATR, VWAP, SuperTrend, Stochastic, Williams %R
+  patterns.js            — 22 candlestick patterns
+  greeks.js              — Black-Scholes Greeks + IV + Max Pain
+  fo-skill.js            — F&O AI skill (strategies, regime, sizing, backtest)
+  paper-trade.js         — virtual portfolio (data/paper-portfolio.json)
+  trade-journal.js       — trade log with stats (data/trade-journal.json)
+  history-analyzer.js    — historical similarity matching
+  groww-client.js        — NSE/Yahoo Finance data + Groww broker API
+  brokers/               — AngelOne, Zerodha, Upstox broker adapters
+  telegram.js            — Telegram bot (alerts + two-way control)
+
+tools/                   — utility scripts
+  advisor-run.mjs        — standalone AI advisor (npm run advisor)
+  cache-refresh.mjs      — cache management (npm run cache)
+  quick.mjs              — quick scan utility (npm run q)
+  presets.mjs            — pre-configured setups (npm run preset)
+  launch.mjs             — bot launcher (npm run launch)
+
+dashboards/              — monitoring & visualization
+  server-dashboard.mjs   — web dashboard (npm run dashboard)
+  monitor.mjs            — real-time market monitor (npm run monitor)
+  stock-view.mjs         — stock detail viewer (npm run stock)
+  portfolio-view.mjs     — portfolio tracker (npm run portfolio)
+  live-dashboard.mjs     — live dashboard variant
+
+experiments/             — experimental/test scripts
+  auto-trader.mjs        — auto-trading script
+  scalper.mjs            — scalping bot
+  fo_plan.mjs            — F&O strategy testing
+  sl_exit.mjs            — stop-loss exit strategies
+
+data/                    — runtime data (gitignored)
+reports/                 — generated HTML reports (gitignored)
 ```
 
 ## Live Market Data (no auth needed)
@@ -167,6 +191,10 @@ npm run bot              # watch mode — scan every 5m, dashboard
 npm run bot:paper        # auto paper trade on score >= 7
 npm run bot -- --watchlist RELIANCE,TCS,HDFCBANK --interval 3 --min-score 6
 npm run cli              # interactive REPL
+npm run dashboard        # web dashboard
+npm run monitor          # real-time market monitor
+npm run q RELIANCE       # quick scan
+npm run advisor          # standalone AI advisor
 ```
 
 ## Telegram Commands (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in .env)
@@ -204,10 +232,92 @@ TELEGRAM_CHAT_ID=     # your chat ID
 6. Check historical similarity for forward return expectation
 7. State clearly: BUY / SELL / NEUTRAL with reason
 
+## F&O AI Skill (src/fo-skill.js)
+
+```js
+import { greeks, bullPutSpread, bearCallSpread, ironCondor, longStraddle,
+         longStrangle, calendarSpread, suggestStrategy, detectRegime,
+         analyzePCR, kellyCriterion, sizePosition, optionsVaR,
+         ivPercentile, impliedVol, growwCharges, analyzeFO,
+         backtestBullPutSpread } from './src/fo-skill.js';
+
+// Detect market regime
+detectRegime({ rsi, macdHist, atr, atrAvg, bbWidth, superTrend, weeklyRsi, vix })
+// → TRENDING_UP | TRENDING_DOWN | VOLATILE | RANGE_BOUND
+
+// AI strategy selector
+suggestStrategy({ spot, regime, iv, vix, rsi, daysToExpiry, capital, lotSize })
+// → ranked list of strategies with reasons
+
+// Build any spread
+bullPutSpread({ spot, sellStrike, buyStrike, T, iv, lot })
+bearCallSpread({ spot, sellStrike, buyStrike, T, iv, lot })
+ironCondor({ spot, putSell, putBuy, callSell, callBuy, T, iv, lot })
+longStraddle({ spot, strike, T, iv, lot })
+longStrangle({ spot, callStrike, putStrike, T, iv, lot })
+calendarSpread({ spot, strike, T_near, T_far, iv_near, iv_far, lot, type })
+
+// Risk
+kellyCriterion({ winRate, avgWin, avgLoss })   // optimal position size
+sizePosition({ capital, riskPct, maxLossPerLot, lotSize })
+optionsVaR({ premium, delta, gamma, vega, spot, iv, T, qty })
+ivPercentile(currentIV, historicalIVs)         // IV rank: buy or sell premium?
+analyzePCR(pcr)                                // PCR interpretation
+
+// Full master analysis
+analyzeFO({ symbol, spot, iv, vix, rsi, macdHist, atr, atrAvg, bbWidth,
+            superTrend, weeklyRsi, daysToExpiry, capital, lotSize, pcr })
+// → { regime, ivLevel, topStrategy, details, sizing, exitRules }
+
+// Backtest
+backtestBullPutSpread(candles, { rsiEntry, spreadWidthPct, ivEstimate, daysToExpiry })
+```
+
 ## When user asks about F&O
 
-- Use Black-Scholes for Greeks
-- NIFTY lot size: 75, BANKNIFTY: 30
-- Preferred strategies: long calls/puts on breakouts, bull/bear spreads to reduce premium
-- Always state max loss = premium paid for buying options
-- Check IV before buying (avoid buying when IV > 20% for index)
+- ALWAYS use src/fo-skill.js — it has correct Black-Scholes, all strategies, risk sizing
+- Use analyzeFO() for complete recommendation
+- NIFTY lot: 75 | BANKNIFTY: 30 | FINNIFTY: 40
+- IV > 20% → SELL premium (spreads/condors) | IV < 14% → BUY premium
+- VIX > 20 → use defined-risk only (no naked sells)
+- Always show: MaxProfit, MaxLoss, Breakeven, Margin, Charges, Exit rules
+- Paper trade every suggestion with growwCharges() for realism
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes � gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review � token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

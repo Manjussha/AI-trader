@@ -11,7 +11,14 @@
  */
 
 import fetch from 'node-fetch';
+import https from 'https';
 import { createHmac } from 'crypto';
+
+// Persistent HTTPS connections — avoids TCP+TLS handshake per request (~100-200ms saved)
+const keepAliveAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 6 });
+
+// Cookie TTL: refresh every 5 minutes
+const COOKIE_TTL = 5 * 60 * 1000;
 
 const BASE = 'https://api.groww.in/v1';
 
@@ -53,6 +60,7 @@ export class GrowwClient {
     this.totpSecret = totpSecret; // The TOTP secret (from QR code)
     this.accessToken = null;      // Full access token (obtained after TOTP exchange)
     this._nseCookies = null;
+    this._cookieExpiry = 0;
   }
 
   // ─── Auth: Exchange TOTP token → access token ───────────────────────────
@@ -74,8 +82,8 @@ export class GrowwClient {
       throw new Error(`Auth failed: ${JSON.stringify(data)}`);
     }
 
-    // Token is inside payload
-    this.accessToken = data?.payload?.access_token || data?.access_token || data?.token;
+    // Token field from Groww API response
+    this.accessToken = data?.token || data?.payload?.access_token || data?.access_token;
     if (!this.accessToken) throw new Error(`No access token in response: ${JSON.stringify(data)}`);
     return this.accessToken;
   }
@@ -117,14 +125,23 @@ export class GrowwClient {
 
   // ─── NSE India public market data ───────────────────────────────────────
   async _getNseCookies() {
-    if (this._nseCookies) return this._nseCookies;
+    if (this._nseCookies && this._cookieExpiry > Date.now()) return this._nseCookies;
     const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-    // Two-step: homepage then market-data page to collect full cookie set
-    const r1 = await fetch('https://www.nseindia.com', { headers: { 'User-Agent': UA, 'Accept': 'text/html' } });
-    const r2 = await fetch('https://www.nseindia.com/market-data/live-equity-market', { headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Referer': 'https://www.nseindia.com/' } });
+    // Parallel fetch — both pages are independent (saves ~200-400ms)
+    const [r1, r2] = await Promise.all([
+      fetch('https://www.nseindia.com', { headers: { 'User-Agent': UA, 'Accept': 'text/html' }, agent: keepAliveAgent }),
+      fetch('https://www.nseindia.com/market-data/live-equity-market', { headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Referer': 'https://www.nseindia.com/' }, agent: keepAliveAgent }),
+    ]);
     const raw = [r1.headers.get('set-cookie') || '', r2.headers.get('set-cookie') || ''].join(',');
     this._nseCookies = raw.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
+    this._cookieExpiry = Date.now() + COOKIE_TTL;
     return this._nseCookies;
+  }
+
+  /** Pre-warm connections: fetch cookies + establish keep-alive TCP sessions. Call once at startup. */
+  async warmUp() {
+    await this._getNseCookies();
+    await this._nseRequest('/marketStatus');
   }
 
   async _nseRequest(path) {
@@ -138,7 +155,8 @@ export class GrowwClient {
         'Referer': 'https://www.nseindia.com/',
         'X-Requested-With': 'XMLHttpRequest',
         'Cookie': cookies,
-      }
+      },
+      agent: keepAliveAgent,
     });
     const text = await res.text();
     try { return JSON.parse(text); } catch { return {}; }
@@ -176,16 +194,17 @@ export class GrowwClient {
   // ─── ACCOUNT ─────────────────────────────────────────────────────────────
 
   async getHoldings() {
-    return this._request('GET', '/portfolio/holdings');
+    const data = await this._request('GET', '/holdings/user');
+    return data?.holdings ?? data;
   }
 
   async getPositions(segment = null) {
-    const q = segment ? `?segment=${segment}` : '';
-    return this._request('GET', `/portfolio/positions${q}`);
+    const data = await this._request('GET', '/positions/user');
+    return data?.positions ?? data;
   }
 
   async getFunds() {
-    return this._request('GET', '/portfolio/margin');
+    return this._request('GET', '/margins/detail/user');
   }
 
   // ─── ORDERS ──────────────────────────────────────────────────────────────

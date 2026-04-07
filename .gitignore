@@ -5,10 +5,18 @@
 .env.production
 
 # ── Auto-generated data files ─────────────────────────────────
-paper-portfolio.json
-trade-journal.json
+data/
 bot.log
 *.log
+
+# ── Reports (generated HTML) ─────────────────────────────────
+reports/
+
+# ── Cache ─────────────────────────────────────────────────────
+cache.json
+
+# ── Code Review Graph ────────────────────────────────────────
+.code-review-graph/
 
 # ── Node ──────────────────────────────────────────────────────
 node_modules/
@@ -24,3 +32,4 @@ desktop.ini
 .idea/
 *.suo
 *.user
+__pycache__/

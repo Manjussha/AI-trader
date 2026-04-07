@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Trading Agent</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0f1117; --panel: #1a1d2e; --border: #2a2e39; --text: #d1d4dc;
+  --dim: #787b86; --accent: #2196f3; --green: #26a69a; --red: #ef5350;
+  --yellow: #ffb74d; --mono: 'Consolas', 'Monaco', monospace;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 13px; height: 100vh; overflow: hidden; }
+
+/* Header */
+.header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 20px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 15px; color: var(--accent); font-weight: 600; }
+.header .status { display: flex; gap: 16px; font-size: 12px; color: var(--dim); }
+.header .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.dot.on { background: var(--green); }
+.dot.off { background: var(--red); }
+
+/* Main layout */
+.main { display: flex; height: calc(100vh - 42px); }
+.chat-panel { flex: 6; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.right-panel { flex: 4; display: flex; flex-direction: column; overflow-y: auto; }
+
+/* Chat */
+.chat-messages { flex: 1; overflow-y: auto; padding: 12px; }
+.chat-input-area { border-top: 1px solid var(--border); padding: 10px; display: flex; gap: 8px; }
+.chat-input-area input { flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 6px; font-family: var(--mono); font-size: 13px; outline: none; }
+.chat-input-area input:focus { border-color: var(--accent); }
+.chat-input-area button { background: var(--accent); color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-weight: 600; }
+.chat-input-area button:hover { opacity: 0.9; }
+.chat-input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Messages */
+.msg { margin-bottom: 12px; line-height: 1.5; }
+.msg.user { color: var(--accent); }
+.msg.user::before { content: '> '; color: var(--dim); }
+.msg.assistant { color: var(--text); white-space: pre-wrap; }
+.msg.system { color: var(--yellow); font-size: 12px; }
+.msg.error { color: var(--red); }
+
+/* Tool calls */
+.tool-block { background: #141620; border: 1px solid var(--border); border-radius: 4px; margin: 6px 0; font-size: 12px; }
+.tool-header { padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; color: var(--dim); }
+.tool-header:hover { color: var(--text); }
+.tool-header .name { color: var(--yellow); }
+.tool-body { padding: 8px 10px; border-top: 1px solid var(--border); max-height: 200px; overflow-y: auto; display: none; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
+.tool-block.open .tool-body { display: block; }
+
+/* Thinking indicator */
+.thinking { color: var(--dim); animation: pulse 1.5s infinite; margin: 8px 0; }
+@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+/* Right panels */
+.panel { border-bottom: 1px solid var(--border); padding: 12px 14px; }
+.panel h3 { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+
+/* Agent cards */
+.agent-card { background: #141620; border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+.agent-card .name { font-weight: 600; margin-bottom: 4px; }
+.agent-card .status { font-size: 11px; }
+.agent-card .status.running { color: var(--green); }
+.agent-card .status.stopped { color: var(--red); }
+.agent-card .status.completed { color: var(--yellow); }
+.agent-card .pnl { font-size: 16px; font-weight: 700; margin: 6px 0; }
+.agent-card .pnl.pos { color: var(--green); }
+.agent-card .pnl.neg { color: var(--red); }
+.agent-card .meta { font-size: 11px; color: var(--dim); }
+.agent-card .stop-btn { background: var(--red); color: #fff; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-top: 6px; font-family: var(--mono); }
+.agent-card .levels { display: flex; gap: 12px; font-size: 11px; margin-top: 4px; }
+.agent-card .levels .sl { color: var(--red); }
+.agent-card .levels .tgt { color: var(--green); }
+
+/* Portfolio */
+.port-row { display: flex; justify-content: space-between; padding: 3px 0; }
+.port-row .label { color: var(--dim); }
+
+/* Empty state */
+.empty { color: var(--dim); font-size: 12px; font-style: italic; }
+
+/* Accounts panel */
+.acct-card { background: #141620; border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-bottom: 6px; position: relative; }
+.acct-card.active { border-color: var(--accent); }
+.acct-card .acct-name { font-weight: 600; font-size: 12px; }
+.acct-card .acct-broker { color: var(--dim); font-size: 11px; text-transform: uppercase; }
+.acct-card .acct-status { font-size: 10px; margin-top: 3px; }
+.acct-card .acct-status.connected { color: var(--green); }
+.acct-card .acct-status.error { color: var(--red); }
+.acct-card .acct-status.disconnected { color: var(--dim); }
+.acct-card .acct-badge { position: absolute; top: 8px; right: 8px; font-size: 9px; padding: 2px 6px; border-radius: 3px; font-family: var(--mono); }
+.acct-card .acct-badge.live { background: var(--green); color: #000; }
+.acct-card .acct-badge.paper-badge { background: var(--yellow); color: #000; }
+.acct-card .acct-badge.inactive { background: var(--border); color: var(--dim); }
+.acct-actions { display: flex; gap: 4px; margin-top: 6px; }
+.acct-actions button { background: none; border: 1px solid var(--border); color: var(--dim); padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 10px; font-family: var(--mono); }
+.acct-actions button:hover { color: var(--text); border-color: var(--dim); }
+.acct-actions button.primary { border-color: var(--accent); color: var(--accent); }
+.acct-actions button.danger { border-color: var(--red); color: var(--red); }
+
+/* Add account form */
+.add-acct-form { background: #141620; border: 1px solid var(--border); border-radius: 4px; padding: 10px; margin-top: 6px; display: none; }
+.add-acct-form label { display: block; font-size: 11px; color: var(--dim); margin: 6px 0 2px; }
+.add-acct-form input, .add-acct-form select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 5px 8px; border-radius: 3px; font-family: var(--mono); font-size: 11px; }
+.add-acct-form select { cursor: pointer; }
+.add-acct-form .form-actions { display: flex; gap: 6px; margin-top: 8px; }
+.add-acct-form .form-actions button { flex: 1; padding: 5px; border-radius: 3px; cursor: pointer; font-family: var(--mono); font-size: 11px; border: 1px solid var(--border); }
+.add-acct-form .form-actions .save-btn { background: var(--accent); color: #fff; border: none; }
+.add-acct-form .form-actions .cancel-btn { background: none; color: var(--dim); }
+.broker-fields { margin-top: 4px; }
+
+/* Memory panel */
+.memory-tabs { display: flex; gap: 2px; margin-bottom: 8px; flex-wrap: wrap; }
+.memory-tab { background: #141620; border: 1px solid var(--border); color: var(--dim); padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: var(--mono); }
+.memory-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.memory-entry { background: #141620; border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin-bottom: 6px; font-size: 11px; }
+.memory-entry .mem-title { color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+.memory-entry .mem-content { color: var(--dim); white-space: pre-wrap; }
+.memory-entry .mem-tags { margin-top: 4px; }
+.memory-entry .mem-tag { background: var(--border); color: var(--dim); padding: 1px 6px; border-radius: 2px; font-size: 10px; margin-right: 4px; }
+.memory-entry .mem-time { color: #555; font-size: 10px; margin-top: 3px; }
+.memory-entry .mem-del { float: right; color: var(--red); cursor: pointer; font-size: 10px; opacity: 0.5; }
+.memory-entry .mem-del:hover { opacity: 1; }
+.memory-list { max-height: 200px; overflow-y: auto; }
+.memory-count { font-size: 10px; color: var(--dim); float: right; }
+
+/* Chat header actions */
+.chat-actions { display: flex; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); justify-content: flex-end; }
+.chat-actions button { background: none; border: 1px solid var(--border); color: var(--dim); padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: var(--mono); }
+.chat-actions button:hover { color: var(--text); border-color: var(--dim); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AI Trading Agent</h1>
+  <div class="status">
+    <span><span class="dot" id="bridgeDot"></span>Bridge</span>
+    <span><span class="dot" id="wsDot"></span>WebSocket</span>
+    <span id="clock"></span>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Chat Panel -->
+  <div class="chat-panel">
+    <div class="chat-actions">
+      <button onclick="clearChat()" title="Clear chat history">Clear Chat</button>
+      <button onclick="exportChat()" title="Export chat as text">Export</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg system">AI Trading Agent ready. Type a message to start.</div>
+      <div class="msg system">Examples: "What is NIFTY at?" | "Analyze RELIANCE" | "Buy NIFTY PE, SL 5pts, target 10pts"</div>
+    </div>
+    <div class="chat-input-area">
+      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
+      <button id="stopBtn" onclick="stopChat()" style="display:none; background:var(--red);">Stop</button>
+      <button id="sendBtn" onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="right-panel">
+    <div class="panel">
+      <h3>Accounts <span style="float:right;font-size:10px;color:var(--dim)" id="activeAcctLabel">Paper</span></h3>
+      <div id="accountsList"></div>
+      <button onclick="toggleAddAccount()" style="background:none;border:1px dashed var(--border);color:var(--dim);width:100%;padding:5px;border-radius:3px;cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:6px;" id="addAcctToggle">+ Add Account</button>
+      <div class="add-acct-form" id="addAcctForm">
+        <label>Account Name</label>
+        <input type="text" id="acctName" placeholder="e.g. My AngelOne">
+        <label>Broker</label>
+        <select id="acctBroker" onchange="showBrokerFields()">
+          <option value="paper">Paper Trading</option>
+          <option value="groww">Groww</option>
+          <option value="angelone">AngelOne</option>
+          <option value="zerodha">Zerodha</option>
+          <option value="upstox">Upstox</option>
+        </select>
+        <div class="broker-fields" id="brokerFields"></div>
+        <div class="form-actions">
+          <button class="cancel-btn" onclick="toggleAddAccount()">Cancel</button>
+          <button class="save-btn" onclick="saveAccount()">Add Account</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Active Agents</h3>
+      <div id="agentsList"><div class="empty">No agents running</div></div>
+    </div>
+    <div class="panel">
+      <h3>Portfolio</h3>
+      <div id="portfolio"><div class="empty">Loading...</div></div>
+    </div>
+    <div class="panel">
+      <h3>Market Pulse</h3>
+      <div id="marketPulse"><div class="empty">Connecting...</div></div>
+    </div>
+    <div class="panel">
+      <h3>Trading Memory <span class="memory-count" id="memoryCount">0</span></h3>
+      <div class="memory-tabs" id="memoryTabs">
+        <div class="memory-tab active" data-cat="patterns" onclick="switchMemTab('patterns')">Patterns</div>
+        <div class="memory-tab" data-cat="rules" onclick="switchMemTab('rules')">Rules</div>
+        <div class="memory-tab" data-cat="lessons" onclick="switchMemTab('lessons')">Lessons</div>
+        <div class="memory-tab" data-cat="trades" onclick="switchMemTab('trades')">Trades</div>
+        <div class="memory-tab" data-cat="notes" onclick="switchMemTab('notes')">Notes</div>
+      </div>
+      <div class="memory-list" id="memoryList"><div class="empty">No memories yet</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const sendBtn = document.getElementById('sendBtn');
+const stopBtn = document.getElementById('stopBtn');
+const bridgeDot = document.getElementById('bridgeDot');
+const wsDot = document.getElementById('wsDot');
+let ws = null;
+let currentAssistantDiv = null;
+let isWaiting = false;
+let chatHistory = [];  // persisted to localStorage
+let memoryData = {};   // from bridge
+let activeMemTab = 'patterns';
+
+// ── Chat History Persistence ────────────────────────────────────────────────
+const HISTORY_KEY = 'trading_chat_history';
+const MAX_HISTORY = 500;  // max messages to keep
+
+function loadChatHistory() {
+  try {
+    const saved = localStorage.getItem(HISTORY_KEY);
+    if (!saved) return;
+    chatHistory = JSON.parse(saved);
+    if (!Array.isArray(chatHistory)) { chatHistory = []; return; }
+
+    // Clear default messages
+    chatMessages.innerHTML = '';
+
+    // Rebuild DOM from history
+    for (const item of chatHistory) {
+      if (item.type === 'user') {
+        const div = document.createElement('div');
+        div.className = 'msg user';
+        div.textContent = item.text;
+        chatMessages.appendChild(div);
+      } else if (item.type === 'assistant') {
+        const div = document.createElement('div');
+        div.className = 'msg assistant';
+        div.textContent = item.text;
+        chatMessages.appendChild(div);
+      } else if (item.type === 'system') {
+        const div = document.createElement('div');
+        div.className = 'msg system';
+        div.textContent = item.text;
+        chatMessages.appendChild(div);
+      } else if (item.type === 'error') {
+        const div = document.createElement('div');
+        div.className = 'msg error';
+        div.textContent = item.text;
+        chatMessages.appendChild(div);
+      } else if (item.type === 'tool') {
+        const block = document.createElement('div');
+        block.className = 'tool-block';
+        block.dataset.tool = item.tool;
+        const header = document.createElement('div');
+        header.className = 'tool-header';
+        header.innerHTML = `<span><span class="name">${item.tool}</span> done</span><span>+</span>`;
+        header.onclick = () => block.classList.toggle('open');
+        const body = document.createElement('div');
+        body.className = 'tool-body';
+        body.textContent = item.result || item.input || '';
+        block.appendChild(header);
+        block.appendChild(body);
+        chatMessages.appendChild(block);
+      }
+    }
+    scrollChat();
+  } catch (e) {
+    console.error('Failed to load chat history:', e);
+    chatHistory = [];
+  }
+}
+
+function saveChatHistory() {
+  try {
+    // Trim if too long
+    if (chatHistory.length > MAX_HISTORY) {
+      chatHistory = chatHistory.slice(-MAX_HISTORY);
+    }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistory));
+  } catch (e) {
+    console.error('Failed to save chat history:', e);
+  }
+}
+
+function clearChat() {
+  chatHistory = [];
+  localStorage.removeItem(HISTORY_KEY);
+  chatMessages.innerHTML = '';
+  addSystemMsg('Chat cleared. Ready for new messages.');
+}
+
+function exportChat() {
+  let text = '';
+  for (const item of chatHistory) {
+    if (item.type === 'user') text += `> ${item.text}\n\n`;
+    else if (item.type === 'assistant') text += `${item.text}\n\n`;
+    else if (item.type === 'system') text += `[${item.text}]\n`;
+    else if (item.type === 'tool') text += `[Tool: ${item.tool}]\n`;
+  }
+  const blob = new Blob([text], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `trading-chat-${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    wsDot.className = 'dot on';
+    ws.send(JSON.stringify({type: 'get_portfolio'}));
+    ws.send(JSON.stringify({type: 'get_agents'}));
+  };
+
+  ws.onclose = () => {
+    wsDot.className = 'dot off';
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleWSMessage(msg);
+  };
+}
+
+function handleWSMessage(msg) {
+  switch (msg.type) {
+    case 'thinking':
+      if (msg.status) showThinking();
+      break;
+
+    case 'chat_stream':
+      hideThinking();
+      appendToAssistant(msg.delta);
+      break;
+
+    case 'chat_done':
+      hideThinking();
+      finalizeAssistant();
+      setWaiting(false);
+      break;
+
+    case 'tool_start':
+      hideThinking();
+      addToolBlock(msg.tool, msg.input, null);
+      break;
+
+    case 'tool_result':
+      updateLastToolResult(msg.tool, msg.result);
+      break;
+
+    case 'agent_update':
+      updateAgentCard(msg);
+      break;
+
+    case 'agent_exit':
+      addSystemMsg(`Agent ${msg.agent_id}: ${msg.message}`);
+      refreshAgents();
+      refreshPortfolio();
+      break;
+
+    case 'agent_list':
+      renderAgents(msg.agents);
+      break;
+
+    case 'agent_stopped':
+      addSystemMsg(`Agent stopped: ${msg.message || 'OK'}`);
+      refreshAgents();
+      break;
+
+    case 'portfolio':
+      renderPortfolio(msg.data);
+      break;
+
+    case 'chat_stopped':
+      hideThinking();
+      finalizeAssistant();
+      addSystemMsg('Stopped.');
+      break;
+
+    case 'error':
+      addErrorMsg(msg.message);
+      setWaiting(false);
+      break;
+  }
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text || !ws) return;
+
+  // If agent is running, stop it first then send new message
+  if (isWaiting) {
+    ws.send(JSON.stringify({type: 'stop_chat'}));
+    // Small delay to let stop process, then send new message
+    setTimeout(() => {
+      addUserMsg(text);
+      ws.send(JSON.stringify({type: 'chat', message: text}));
+      chatInput.value = '';
+      currentAssistantDiv = null;
+      setWaiting(true);
+    }, 300);
+    return;
+  }
+
+  addUserMsg(text);
+  ws.send(JSON.stringify({type: 'chat', message: text}));
+  chatInput.value = '';
+  currentAssistantDiv = null;
+  setWaiting(true);
+}
+
+function stopChat() {
+  if (ws && isWaiting) {
+    ws.send(JSON.stringify({type: 'stop_chat'}));
+    setWaiting(false);
+  }
+}
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Escape' && isWaiting) { e.preventDefault(); stopChat(); }
+});
+
+function setWaiting(v) {
+  isWaiting = v;
+  stopBtn.style.display = v ? 'inline-block' : 'none';
+  sendBtn.textContent = v ? 'Send' : 'Send';
+  chatInput.placeholder = v ? 'Type to stop & send new message... (Esc to stop)' : 'Type a message...';
+  chatInput.disabled = false;  // Always keep input enabled
+  chatInput.focus();
+}
+
+function addUserMsg(text) {
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatHistory.push({ type: 'user', text, ts: Date.now() });
+  saveChatHistory();
+  scrollChat();
+}
+
+function appendToAssistant(text) {
+  if (!currentAssistantDiv) {
+    currentAssistantDiv = document.createElement('div');
+    currentAssistantDiv.className = 'msg assistant';
+    chatMessages.appendChild(currentAssistantDiv);
+    // Add new history entry
+    chatHistory.push({ type: 'assistant', text: '', ts: Date.now() });
+  }
+  currentAssistantDiv.textContent += text;
+  // Update last history entry
+  const last = chatHistory[chatHistory.length - 1];
+  if (last && last.type === 'assistant') last.text += text;
+  scrollChat();
+}
+
+// Save assistant message to localStorage when streaming finishes
+function finalizeAssistant() {
+  saveChatHistory();
+  currentAssistantDiv = null;
+}
+
+function addSystemMsg(text) {
+  const div = document.createElement('div');
+  div.className = 'msg system';
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatHistory.push({ type: 'system', text, ts: Date.now() });
+  saveChatHistory();
+  scrollChat();
+}
+
+function addErrorMsg(text) {
+  const div = document.createElement('div');
+  div.className = 'msg error';
+  div.textContent = 'Error: ' + text;
+  chatMessages.appendChild(div);
+  chatHistory.push({ type: 'error', text: 'Error: ' + text, ts: Date.now() });
+  saveChatHistory();
+  scrollChat();
+}
+
+function showThinking() {
+  if (document.getElementById('thinkingEl')) return;
+  const div = document.createElement('div');
+  div.id = 'thinkingEl';
+  div.className = 'thinking';
+  div.textContent = 'Thinking...';
+  chatMessages.appendChild(div);
+  scrollChat();
+}
+
+function hideThinking() {
+  const el = document.getElementById('thinkingEl');
+  if (el) el.remove();
+}
+
+// ── Tool blocks ──────────────────────────────────────────────────────────────
+function addToolBlock(toolName, input, result) {
+  const block = document.createElement('div');
+  block.className = 'tool-block';
+  block.dataset.tool = toolName;
+
+  const header = document.createElement('div');
+  header.className = 'tool-header';
+  header.innerHTML = `<span><span class="name">${toolName}</span> ${result ? 'done' : 'executing...'}</span><span>+</span>`;
+  header.onclick = () => block.classList.toggle('open');
+
+  const body = document.createElement('div');
+  body.className = 'tool-body';
+  body.textContent = result ? formatJSON(result) : formatJSON(input);
+
+  block.appendChild(header);
+  block.appendChild(body);
+  chatMessages.appendChild(block);
+
+  chatHistory.push({ type: 'tool', tool: toolName, input: formatJSON(input), result: null, ts: Date.now() });
+  scrollChat();
+}
+
+function updateLastToolResult(toolName, result) {
+  const blocks = chatMessages.querySelectorAll('.tool-block');
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].dataset.tool === toolName) {
+      const header = blocks[i].querySelector('.tool-header');
+      header.innerHTML = `<span><span class="name">${toolName}</span> done</span><span>+</span>`;
+      const body = blocks[i].querySelector('.tool-body');
+      body.textContent = formatJSON(result);
+      break;
+    }
+  }
+  // Update last tool entry in history
+  for (let i = chatHistory.length - 1; i >= 0; i--) {
+    if (chatHistory[i].type === 'tool' && chatHistory[i].tool === toolName && !chatHistory[i].result) {
+      chatHistory[i].result = formatJSON(result);
+      break;
+    }
+  }
+}
+
+function formatJSON(obj) {
+  if (typeof obj === 'string') {
+    try { obj = JSON.parse(obj); } catch { return obj; }
+  }
+  return JSON.stringify(obj, null, 2);
+}
+
+function scrollChat() {
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// ── Agent cards ──────────────────────────────────────────────────────────────
+function renderAgents(agents) {
+  const el = document.getElementById('agentsList');
+  if (!agents || agents.length === 0) {
+    el.innerHTML = '<div class="empty">No agents running</div>';
+    return;
+  }
+  el.innerHTML = agents.map(a => agentCardHTML(a)).join('');
+}
+
+function updateAgentCard(data) {
+  const el = document.getElementById('agentsList');
+  let card = document.getElementById(`agent-${data.agent_id}`);
+  if (!card) {
+    // Create new card
+    const div = document.createElement('div');
+    div.innerHTML = agentCardHTML(data);
+    el.innerHTML = '';
+    el.appendChild(div.firstElementChild);
+    card = document.getElementById(`agent-${data.agent_id}`);
+  }
+  // Update values
+  const pnlEl = card.querySelector('.pnl');
+  const niftyEl = card.querySelector('.nifty-val');
+  const statusEl = card.querySelector('.status');
+  if (pnlEl) {
+    const pnl = data.pnl || 0;
+    pnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl}`;
+    pnlEl.className = `pnl ${pnl >= 0 ? 'pos' : 'neg'}`;
+  }
+  if (niftyEl) niftyEl.textContent = data.nifty || '--';
+  if (statusEl) {
+    const st = data.status || 'RUNNING';
+    statusEl.textContent = st;
+    statusEl.className = `status ${st.toLowerCase()}`;
+  }
+}
+
+function agentCardHTML(a) {
+  const cfg = a.config || {};
+  const pnl = a.pnl || (a.last_update && a.last_update.pnl) || 0;
+  const nifty = (a.last_update && a.last_update.nifty) || '--';
+  const status = a.status || 'RUNNING';
+  return `
+    <div class="agent-card" id="agent-${a.id || a.agent_id}">
+      <div class="name">${a.name || cfg.symbol + ' ' + cfg.strike + cfg.type}</div>
+      <div class="status ${status.toLowerCase()}">${status}</div>
+      <div class="pnl ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}${pnl}</div>
+      <div class="meta">NIFTY: <span class="nifty-val">${nifty}</span></div>
+      <div class="levels">
+        <span class="sl">SL: ${cfg.sl_points || '--'}pts</span>
+        <span class="tgt">Tgt: ${cfg.tgt_points || '--'}pts</span>
+      </div>
+      ${status === 'RUNNING' ? `<button class="stop-btn" onclick="stopAgent('${a.id || a.agent_id}')">Stop Agent</button>` : ''}
+    </div>`;
+}
+
+function stopAgent(id) {
+  if (ws) ws.send(JSON.stringify({type: 'stop_agent', agent_id: id}));
+}
+
+function refreshAgents() {
+  if (ws) ws.send(JSON.stringify({type: 'get_agents'}));
+}
+
+// ── Portfolio ────────────────────────────────────────────────────────────────
+function renderPortfolio(p) {
+  if (!p) return;
+  const el = document.getElementById('portfolio');
+  const pnlColor = parseFloat(p.totalPnl) >= 0 ? 'var(--green)' : 'var(--red)';
+  el.innerHTML = `
+    <div class="port-row"><span class="label">Cash</span><span>${p.cash}</span></div>
+    <div class="port-row"><span class="label">Portfolio</span><span>${p.portfolioValue}</span></div>
+    <div class="port-row"><span class="label">P&L</span><span style="color:${pnlColor}">${p.totalPnl} (${p.totalReturn})</span></div>
+    <div class="port-row"><span class="label">Trades</span><span>${p.totalTrades} | W:${p.wins} L:${p.losses}</span></div>
+    <div class="port-row"><span class="label">Win Rate</span><span>${p.winRate}</span></div>
+  `;
+}
+
+function refreshPortfolio() {
+  if (ws) ws.send(JSON.stringify({type: 'get_portfolio'}));
+}
+
+// ── Market Pulse ─────────────────────────────────────────────────────────────
+async function fetchMarketPulse() {
+  try {
+    const resp = await fetch('http://localhost:3001/api/nifty');
+    const data = await resp.json();
+    if (data.success && data.data) {
+      bridgeDot.className = 'dot on';
+      const n = data.data;
+      const dir = n.pChange >= 0 ? 'var(--green)' : 'var(--red)';
+      document.getElementById('marketPulse').innerHTML = `
+        <div class="port-row"><span class="label">NIFTY</span><span style="color:${dir}">${n.lastPrice} (${n.pChange >= 0 ? '+' : ''}${n.pChange?.toFixed(2)}%)</span></div>
+        <div class="port-row"><span class="label">Day Range</span><span>${n.dayLow} - ${n.dayHigh}</span></div>
+        <div class="port-row"><span class="label">Open</span><span>${n.open}</span></div>
+      `;
+    }
+  } catch {
+    bridgeDot.className = 'dot off';
+    document.getElementById('marketPulse').innerHTML = '<div class="empty">Bridge offline</div>';
+  }
+}
+
+// ── Clock ────────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata'}) + ' IST';
+}
+
+// ── Accounts Management ─────────────────────────────────────────────────────
+let accountsData = { active: 'paper', accounts: {} };
+
+const BROKER_FIELDS = {
+  paper: [{ key: 'capital', label: 'Starting Capital', placeholder: '100000', type: 'number' }],
+  groww: [
+    { key: 'apiKey', label: 'API Key (JWT)', placeholder: 'Groww JWT token' },
+    { key: 'apiSecret', label: 'API Secret', placeholder: 'Optional' },
+    { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'Base32 TOTP secret' },
+  ],
+  angelone: [
+    { key: 'apiKey', label: 'API Key', placeholder: 'AngelOne API key' },
+    { key: 'clientId', label: 'Client ID', placeholder: 'e.g. A12345' },
+    { key: 'password', label: 'Password', placeholder: 'Login password' },
+    { key: 'totpSecret', label: 'TOTP Secret', placeholder: 'Base32 TOTP secret' },
+  ],
+  zerodha: [
+    { key: 'apiKey', label: 'API Key', placeholder: 'Kite Connect API key' },
+    { key: 'apiSecret', label: 'API Secret', placeholder: 'Kite Connect secret' },
+    { key: 'accessToken', label: 'Access Token', placeholder: 'Session access token' },
+  ],
+  upstox: [
+    { key: 'apiKey', label: 'API Key', placeholder: 'Upstox API key' },
+    { key: 'apiSecret', label: 'API Secret', placeholder: 'Upstox secret' },
+    { key: 'accessToken', label: 'Access Token', placeholder: 'OAuth access token' },
+  ],
+};
+
+async function fetchAccounts() {
+  try {
+    const resp = await fetch('http://localhost:3001/api/accounts');
+    const data = await resp.json();
+    if (data.success) {
+      accountsData = data.data;
+      renderAccounts();
+    }
+  } catch {}
+}
+
+function renderAccounts() {
+  const el = document.getElementById('accountsList');
+  const active = accountsData.active;
+  const accts = accountsData.accounts || {};
+  document.getElementById('activeAcctLabel').textContent = accts[active] ? accts[active].name : 'None';
+
+  el.innerHTML = Object.entries(accts).map(([id, a]) => {
+    const isActive = id === active;
+    const isPaper = a.broker === 'paper';
+    const statusClass = a.status === 'connected' ? 'connected' : a.status === 'error' ? 'error' : 'disconnected';
+    const badgeClass = isActive ? (isPaper ? 'paper-badge' : 'live') : 'inactive';
+    const badgeText = isActive ? (isPaper ? 'PAPER' : 'LIVE') : 'IDLE';
+    return `
+      <div class="acct-card ${isActive ? 'active' : ''}">
+        <span class="acct-badge ${badgeClass}">${badgeText}</span>
+        <div class="acct-name">${escHtml(a.name)}</div>
+        <div class="acct-broker">${a.broker}</div>
+        <div class="acct-status ${statusClass}">${a.status || 'not tested'}${a.lastError ? ' — ' + a.lastError : ''}</div>
+        <div class="acct-actions">
+          ${!isActive ? `<button class="primary" onclick="switchAccount('${id}')">Activate</button>` : ''}
+          ${!isPaper ? `<button onclick="testAccount('${id}')">Test</button>` : ''}
+          ${!isPaper ? `<button class="danger" onclick="removeAccount('${id}')">Remove</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function switchAccount(id) {
+  try {
+    const resp = await fetch('http://localhost:3001/api/accounts/active', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      addSystemMsg(`Switched to: ${data.message}`);
+      fetchAccounts();
+    }
+  } catch {}
+}
+
+async function testAccount(id) {
+  addSystemMsg(`Testing connection for ${id}...`);
+  try {
+    const resp = await fetch('http://localhost:3001/api/accounts/test', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id })
+    });
+    const data = await resp.json();
+    addSystemMsg(data.success ? `Connected: ${data.message}` : `Failed: ${data.message}`);
+    fetchAccounts();
+  } catch (e) {
+    addSystemMsg(`Test failed: ${e.message}`);
+  }
+}
+
+async function removeAccount(id) {
+  if (!confirm(`Remove account "${id}"?`)) return;
+  try {
+    await fetch('http://localhost:3001/api/accounts/remove', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id })
+    });
+    fetchAccounts();
+  } catch {}
+}
+
+function toggleAddAccount() {
+  const form = document.getElementById('addAcctForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') showBrokerFields();
+}
+
+function showBrokerFields() {
+  const broker = document.getElementById('acctBroker').value;
+  const fields = BROKER_FIELDS[broker] || [];
+  document.getElementById('brokerFields').innerHTML = fields.map(f => `
+    <label>${f.label}</label>
+    <input type="${f.type || 'text'}" id="field_${f.key}" placeholder="${f.placeholder || ''}">
+  `).join('');
+}
+
+async function saveAccount() {
+  const name = document.getElementById('acctName').value.trim();
+  const broker = document.getElementById('acctBroker').value;
+  if (!name) { alert('Enter account name'); return; }
+  const id = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+  const account = { name, broker, status: 'not tested', enabled: true };
+  const fields = BROKER_FIELDS[broker] || [];
+  for (const f of fields) {
+    const val = document.getElementById(`field_${f.key}`).value.trim();
+    if (val) account[f.key] = f.type === 'number' ? Number(val) : val;
+  }
+
+  try {
+    const resp = await fetch('http://localhost:3001/api/accounts/add', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ id, account })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      addSystemMsg(`Account added: ${name}`);
+      toggleAddAccount();
+      document.getElementById('acctName').value = '';
+      fetchAccounts();
+    }
+  } catch (e) {
+    addSystemMsg(`Failed to add: ${e.message}`);
+  }
+}
+
+// ── Trading Memory Panel ────────────────────────────────────────────────────
+async function fetchMemory() {
+  try {
+    const resp = await fetch('http://localhost:3001/api/memory');
+    const data = await resp.json();
+    if (data.success) {
+      memoryData = data.data;
+      let total = 0;
+      for (const cat in memoryData) total += (memoryData[cat] || []).length;
+      document.getElementById('memoryCount').textContent = total;
+      renderMemory();
+    }
+  } catch {}
+}
+
+function switchMemTab(cat) {
+  activeMemTab = cat;
+  document.querySelectorAll('.memory-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.cat === cat);
+  });
+  renderMemory();
+}
+
+function renderMemory() {
+  const el = document.getElementById('memoryList');
+  const entries = memoryData[activeMemTab] || [];
+  if (entries.length === 0) {
+    el.innerHTML = `<div class="empty">No ${activeMemTab} saved yet. AI will auto-save as you trade.</div>`;
+    return;
+  }
+  el.innerHTML = entries.slice().reverse().map(e => `
+    <div class="memory-entry">
+      <span class="mem-del" onclick="deleteMemory('${activeMemTab}','${e.id}')" title="Delete">x</span>
+      <div class="mem-title">${escHtml(e.title || 'Untitled')}</div>
+      <div class="mem-content">${escHtml(e.content || '')}</div>
+      ${e.tags && e.tags.length ? `<div class="mem-tags">${e.tags.map(t => `<span class="mem-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
+      <div class="mem-time">${e.timestamp ? new Date(e.timestamp).toLocaleString('en-IN') : ''}</div>
+    </div>
+  `).join('');
+}
+
+async function deleteMemory(cat, id) {
+  try {
+    await fetch('http://localhost:3001/api/memory/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: cat, id })
+    });
+    fetchMemory();
+  } catch {}
+}
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadChatHistory();
+connectWS();
+fetchAccounts();
+fetchMarketPulse();
+fetchMemory();
+setInterval(fetchMarketPulse, 10000);
+setInterval(refreshPortfolio, 15000);
+setInterval(fetchAccounts, 30000);
+setInterval(fetchMemory, 30000);
+setInterval(updateClock, 1000);
+updateClock();
+chatInput.focus();
+</script>
+</body>
+</html>

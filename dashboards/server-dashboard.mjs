@@ -5,14 +5,14 @@
  */
 import http from 'http';
 import { URL } from 'url';
-import { GrowwClient } from './src/groww-client.js';
-import { getPortfolio } from './src/paper-trade.js';
+import { GrowwClient } from '../src/groww-client.js';
+import { getPortfolio } from '../src/paper-trade.js';
 import { readFileSync, existsSync } from 'fs';
 import { exec } from 'child_process';
 
 const PORT   = 3000;
 const market = new GrowwClient({ apiKey: '', totpSecret: '' });
-const cache  = existsSync('./cache.json') ? JSON.parse(readFileSync('./cache.json','utf8')) : {};
+const cache  = existsSync('../data/cache.json') ? JSON.parse(readFileSync('../data/cache.json','utf8')) : {};
 const STOCKS = ['TECHM','WIPRO','BEL','NTPC'];
 
 // ── In-memory candle cache ────────────────────────────────────────────────────

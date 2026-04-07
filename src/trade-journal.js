@@ -8,7 +8,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const DB    = join(__dir, '..', 'trade-journal.json');
+const DB    = join(__dir, '..', 'data', 'trade-journal.json');
 
 function load() {
   if (!existsSync(DB)) { const d = empty(); save(d); return d; }

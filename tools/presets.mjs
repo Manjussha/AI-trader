@@ -11,15 +11,15 @@
  *   node presets.mjs exit-all            → Close all paper positions
  *   node presets.mjs status              → Quick status of all presets
  */
-import { GrowwClient } from './src/groww-client.js';
-import { paperBuy, paperSell, paperBuyOption, paperSellOption, getPortfolio } from './src/paper-trade.js';
+import { GrowwClient } from '../src/groww-client.js';
+import { paperBuy, paperSell, paperBuyOption, paperSellOption, getPortfolio } from '../src/paper-trade.js';
 import { readFileSync, existsSync } from 'fs';
 
 const market = new GrowwClient({ apiKey: '', totpSecret: '' });
 const args   = process.argv.slice(2);
 const preset = args[0]?.toLowerCase();
 const symbol = args[1]?.toUpperCase();
-const cache  = existsSync('./cache.json') ? JSON.parse(readFileSync('./cache.json','utf8')) : {};
+const cache  = existsSync('../data/cache.json') ? JSON.parse(readFileSync('../data/cache.json','utf8')) : {};
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 async function getLive(sym) {

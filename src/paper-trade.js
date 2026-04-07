@@ -3,12 +3,13 @@
  * Uses live NSE prices, stores portfolio in JSON file
  * Supports stocks (intraday + delivery) and options simulation
  */
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dir  = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dir, '..', 'paper-portfolio.json');
+const DB_PATH = join(__dir, '..', 'data', 'paper-portfolio.json');
 
 const DEFAULT_PORTFOLIO = {
   cash:          100000,   // default ₹1,00,000 virtual capital
@@ -24,17 +25,55 @@ const DEFAULT_PORTFOLIO = {
   },
 };
 
-// ── DB helpers ────────────────────────────────────────────────────────────────
+// ── In-memory cache + async persist (0ms trades instead of 20-120ms) ─────────
+let _cache = null;
+let _persistTimer = null;
+const PERSIST_DEBOUNCE = 2000; // flush to disk every 2s max
+
 function load() {
-  if (!existsSync(DB_PATH)) { save(DEFAULT_PORTFOLIO); return { ...DEFAULT_PORTFOLIO }; }
-  try { return JSON.parse(readFileSync(DB_PATH, 'utf8')); }
-  catch { return { ...DEFAULT_PORTFOLIO }; }
+  if (_cache) return _cache;
+  // Cold start: one-time sync read
+  if (!existsSync(DB_PATH)) {
+    _cache = { ...DEFAULT_PORTFOLIO };
+    _flushSync();
+    return _cache;
+  }
+  try { _cache = JSON.parse(readFileSync(DB_PATH, 'utf8')); }
+  catch { _cache = { ...DEFAULT_PORTFOLIO }; }
+  return _cache;
 }
 
 function save(portfolio) {
   portfolio.lastUpdated = new Date().toISOString();
-  writeFileSync(DB_PATH, JSON.stringify(portfolio, null, 2));
+  _cache = portfolio;
+  _schedulePersist();
 }
+
+function _schedulePersist() {
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    const dir = dirname(DB_PATH);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFile(DB_PATH, JSON.stringify(_cache, null, 2)).catch(err => {
+      console.error('Paper trade persist failed:', err.message);
+    });
+  }, PERSIST_DEBOUNCE);
+}
+
+function _flushSync() {
+  if (_cache) {
+    try {
+      const dir = dirname(DB_PATH);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(DB_PATH, JSON.stringify(_cache, null, 2));
+    } catch {}
+  }
+}
+
+// Flush on exit so no data is lost
+process.on('exit', _flushSync);
+process.on('SIGINT', () => { _flushSync(); process.exit(0); });
+process.on('SIGTERM', () => { _flushSync(); process.exit(0); });
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 export function paperBuy({ symbol, qty, price, orderType = 'MARKET', productType = 'CNC', note = '' }) {

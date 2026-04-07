@@ -1,5 +1,5 @@
-import { GrowwClient } from './src/groww-client.js';
-import { generateSignal, rsi, sma, bollingerBands, volatility, supportResistance } from './src/analytics.js';
+import { GrowwClient } from '../src/groww-client.js';
+import { generateSignal, rsi, sma, bollingerBands, volatility, supportResistance } from '../src/analytics.js';
 import Anthropic from '@anthropic-ai/sdk';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
