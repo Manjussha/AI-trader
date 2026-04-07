@@ -35,11 +35,14 @@ AI Trading Agent is an open-source, self-hosted trading toolkit that combines:
 - **Background Agents** — Persistent trade monitors that track SL/target and auto-exit positions
 - **Trading Memory** — AI remembers patterns, rules, lessons, and past trades across sessions
 - **Skills Cache** — Common queries execute instantly without AI having to regenerate commands
+- **Self-Modifying Dashboard** — Ask the AI to change the UI itself: "add a watchlist panel", "make font bigger", "add BANKNIFTY to market pulse"
 
 ```
 You type → AI analyzes → Executes trade → Monitors position → Auto-exits at SL/Target
           ↓                                    ↓
     Saves to memory                  Live P&L in dashboard
+
+"Add a sector heatmap panel" → AI edits the dashboard code → Refresh browser → Done
 ```
 
 ---
@@ -57,6 +60,8 @@ You type → AI analyzes → Executes trade → Monitors position → Auto-exits
 | **Multi-Account** | Manage paper + multiple real broker accounts from the dashboard |
 | **Trading Memory** | AI auto-saves patterns, rules, lessons, trades, and notes |
 | **Skills Cache** | First-time queries get cached — next time they execute instantly |
+| **Self-Modifying UI** | Ask "add a watchlist panel" — AI edits the dashboard code live |
+| **Live Portfolio P&L** | Real-time unrealized/realized P&L with live NSE prices for holdings |
 
 ### Technical Analysis
 
@@ -155,9 +160,34 @@ No API key needed for market data — NSE India public API + Yahoo Finance are u
 ### Right Panel — Live Data
 - **Accounts** — Switch between paper trading and real broker accounts
 - **Active Agents** — Background trade monitors with live P&L
-- **Portfolio** — Cash, holdings, P&L, win rate
+- **Portfolio** — Cash, holdings, unrealized/realized P&L with live prices
 - **Market Pulse** — NIFTY live price, day range, auto-refreshes
 - **Trading Memory** — Patterns, rules, lessons, trades, notes
+
+---
+
+## Self-Modifying Dashboard
+
+The AI chatbot has **full access** to read and edit the dashboard code. Ask it to customize the UI:
+
+```
+> "Add BANKNIFTY to the market pulse panel"
+> "Make the chat font size 14px"
+> "Add a new panel showing top 5 gainers"
+> "Change the accent color to green"
+> "Add a keyboard shortcut for quick buy"
+```
+
+The bot uses `Read` to inspect current code, `Edit` to make surgical changes, and tells you to refresh the browser. It has access to all project files:
+
+| Tool | What it does |
+|------|-------------|
+| `Read` | Read any file in the project |
+| `Edit` | Modify existing files (targeted replacements) |
+| `Write` | Create new files |
+| `Bash` | Run shell commands, curl, node scripts |
+| `Glob` | Find files by pattern |
+| `Grep` | Search code content |
 
 ---
 

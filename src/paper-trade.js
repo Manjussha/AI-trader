@@ -242,9 +242,10 @@ export function getPortfolio(livePrices = {}) {
 
   const totalPnl = p.stats.totalRealizedPnl + unrealizedPnl;
   const totalReturn = ((totalPnl / p.initialCapital) * 100).toFixed(2);
-  const winRate = p.stats.totalTrades > 0
-    ? ((p.stats.wins / (p.stats.wins + p.stats.losses)) * 100).toFixed(1)
-    : '0';
+  const closedTrades = p.stats.wins + p.stats.losses;
+  const winRate = closedTrades > 0
+    ? ((p.stats.wins / closedTrades) * 100).toFixed(1)
+    : 'N/A';
 
   return {
     cash:           p.cash.toFixed(2),

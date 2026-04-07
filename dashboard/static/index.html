@@ -644,15 +644,38 @@ function refreshAgents() {
 function renderPortfolio(p) {
   if (!p) return;
   const el = document.getElementById('portfolio');
-  const pnlColor = parseFloat(p.totalPnl) >= 0 ? 'var(--green)' : 'var(--red)';
-  el.innerHTML = `
-    <div class="port-row"><span class="label">Cash</span><span>${p.cash}</span></div>
-    <div class="port-row"><span class="label">Portfolio</span><span>${p.portfolioValue}</span></div>
-    <div class="port-row"><span class="label">P&L</span><span style="color:${pnlColor}">${p.totalPnl} (${p.totalReturn})</span></div>
+  const totalPnl = parseFloat(p.totalPnl) || 0;
+  const unrealPnl = parseFloat(p.unrealizedPnl) || 0;
+  const realPnl = parseFloat(p.realizedPnl) || 0;
+  const pnlColor = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+  const unrealColor = unrealPnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+  let html = `
+    <div class="port-row"><span class="label">Cash</span><span>${fmt(p.cash)}</span></div>
+    <div class="port-row"><span class="label">Portfolio</span><span>${fmt(p.portfolioValue)}</span></div>
+    <div class="port-row"><span class="label">Unrealized</span><span style="color:${unrealColor}">${sign(unrealPnl)}</span></div>
+    <div class="port-row"><span class="label">Realized</span><span style="color:${realPnl>=0?'var(--green)':'var(--red)'}">${sign(realPnl)}</span></div>
+    <div class="port-row"><span class="label">Total P&L</span><span style="color:${pnlColor}">${sign(totalPnl)} (${p.totalReturn})</span></div>
     <div class="port-row"><span class="label">Trades</span><span>${p.totalTrades} | W:${p.wins} L:${p.losses}</span></div>
-    <div class="port-row"><span class="label">Win Rate</span><span>${p.winRate}</span></div>
+    <div class="port-row"><span class="label">Win Rate</span><span>${p.winRate === 'N/A%' || p.winRate === 'NaN%' ? 'No closed trades' : p.winRate}</span></div>
   `;
+
+  // Show holdings
+  if (p.holdings && p.holdings.length > 0) {
+    html += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">';
+    for (const h of p.holdings) {
+      const hPnl = parseFloat(h.unrealizedPnl) || 0;
+      const hColor = hPnl >= 0 ? 'var(--green)' : 'var(--red)';
+      html += `<div class="port-row" style="font-size:11px;"><span class="label">${h.symbol.substring(0,16)}</span><span style="color:${hColor}">${sign(hPnl)} (${h.pnlPct})</span></div>`;
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
 }
+
+function fmt(v) { return '₹' + parseFloat(v || 0).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+function sign(v) { return (v >= 0 ? '+' : '') + '₹' + Math.abs(v).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 
 function refreshPortfolio() {
   if (ws) ws.send(JSON.stringify({type: 'get_portfolio'}));

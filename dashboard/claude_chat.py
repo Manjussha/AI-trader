@@ -130,9 +130,32 @@ WHEN TO READ:
 - Before recommending a trade → check rules and lessons
 - When user asks "what did we learn" or "what patterns work" → read memory
 
+## DASHBOARD MODIFICATION
+You can modify the dashboard app itself. The user may ask you to change the UI, add panels, fix bugs, etc.
+
+Key files:
+  dashboard/static/index.html  — Frontend UI (HTML + CSS + JS, single file)
+  dashboard/app.py             — Starlette WebSocket server
+  dashboard/claude_chat.py     — This chat engine (system prompt, CLI args)
+  dashboard/agents.py          — Background agent system
+  dashboard/bridge.py          — HTTP client to Node bridge
+  dashboard/validators.py      — Trade validation rules
+  node-bridge.mjs              — Node.js REST API (port 3001)
+  src/paper-trade.js           — Paper trading engine
+  src/analytics.js             — Technical indicators
+  src/patterns.js              — Candlestick patterns
+
+When modifying dashboard files:
+1. Use Read to check current code first
+2. Use Edit for targeted changes (preferred) or Write for new files
+3. After editing, tell the user to refresh the browser (for frontend changes)
+4. For backend changes (app.py, bridge), tell user to restart the server
+5. Be careful with index.html — it's a single large file, make surgical edits
+6. Test your changes by curling endpoints or reading the file back
+
 ## RULES
 1. ALWAYS check skills index FIRST. If match → execute command directly. Speed is everything.
-2. Use curl with -s flag always. Parse JSON and present clearly.
+2. Use curl with -s flag always for API calls. Parse JSON and present clearly.
 3. For trades: check live price → validate → execute. Zero errors.
 4. NIFTY lot=75, strikes in 50s. BANKNIFTY lot=30, strikes in 100s.
 5. Risk per trade < 2% of portfolio.
@@ -205,7 +228,7 @@ class ChatSession:
             '--verbose',
             '--session-id', session_id,
             '--system-prompt', full_system_prompt,
-            '--allowedTools', 'Bash(curl:*) Bash(node:*) Read',
+            '--allowedTools', 'Bash Edit Write Read Glob Grep',
             '--permission-mode', 'auto',
             '--no-session-persistence',
         ]

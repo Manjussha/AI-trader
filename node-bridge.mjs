@@ -187,7 +187,25 @@ async function handleRequest(req, res) {
 
     // ── Paper Trading ───────────────────────────────────
     if (url === '/api/paper/portfolio') {
-      return json(res, { success: true, data: getPortfolio() });
+      // Fetch live prices for all holdings so P&L is real
+      const rawPortfolio = getPortfolio(); // get without live prices first to see holdings
+      const livePrices = {};
+      if (rawPortfolio.holdings && rawPortfolio.holdings.length > 0) {
+        const pricePromises = rawPortfolio.holdings.map(async (h) => {
+          try {
+            // For options, skip live price fetch (no easy API)
+            if (h.type === 'OPTION') return;
+            const sym = (h.symbol || '').replace(/_.*$/, ''); // strip option suffixes
+            if (!sym) return;
+            const quote = await market.getLivePriceNSE(sym);
+            if (quote && quote.priceInfo && quote.priceInfo.lastPrice) {
+              livePrices[h.symbol] = quote.priceInfo.lastPrice;
+            }
+          } catch {}
+        });
+        await Promise.all(pricePromises);
+      }
+      return json(res, { success: true, data: getPortfolio(livePrices) });
     }
     if (url === '/api/paper/orders') {
       const q = query(url);
