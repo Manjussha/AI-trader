@@ -21,10 +21,54 @@ body { background: var(--bg); color: var(--text); font-family: var(--mono); font
 .dot.on { background: var(--green); }
 .dot.off { background: var(--red); }
 
-/* Main layout */
-.main { display: flex; height: calc(100vh - 42px); }
-.chat-panel { flex: 6; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
-.right-panel { flex: 4; display: flex; flex-direction: column; overflow-y: auto; }
+/* Main layout — 6-col grid matching wireframe */
+.main {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 6px;
+  height: calc(100vh - 42px);
+}
+.main > .cell {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.cell-chart-1 { grid-area: 1 / 1 / 2 / 2; }
+.cell-chart-2 { grid-area: 2 / 1 / 3 / 2; }
+.cell-chart-3 { grid-area: 3 / 1 / 4 / 2; }
+.cell-account { grid-area: 1 / 2 / 2 / 3; }
+.cell-chat    { grid-area: 2 / 2 / 4 / 3; }
+.cell-agents  { grid-area: 1 / 3 / 2 / 7; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; background: transparent; border: none; }
+.cell-agents > .agent-slot { background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 10px; display: flex; flex-direction: column; overflow: hidden; }
+.cell-portfolio { grid-area: 2 / 3 / 4 / 5; }
+.cell-memory    { grid-area: 2 / 5 / 4 / 7; }
+
+.cell-header { padding: 7px 11px; border-bottom: 1px solid var(--border); font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+.cell-body { flex: 1; overflow: auto; padding: 10px 12px; min-height: 0; }
+.cell-body.nopad { padding: 0; }
+
+/* Chart canvas */
+.chart-wrap { position: relative; width: 100%; height: 100%; }
+.chart-canvas { display: block; width: 100%; height: 100%; }
+.chart-label { position: absolute; top: 6px; left: 8px; font-size: 11px; color: var(--text); pointer-events: none; }
+.chart-price { position: absolute; top: 6px; right: 8px; font-size: 11px; font-weight: 600; pointer-events: none; }
+.chart-meta  { position: absolute; bottom: 4px; left: 8px; font-size: 10px; color: var(--dim); pointer-events: none; }
+.live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--green); margin-right:4px; animation: livePulse 1s infinite; vertical-align: middle; }
+@keyframes livePulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.7); } }
+.tick-flash-up   { animation: flashUp 0.6s ease; }
+.tick-flash-down { animation: flashDown 0.6s ease; }
+@keyframes flashUp   { 0% { background: rgba(38,166,154,0.35); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: rgba(239,83,80,0.35); } 100% { background: transparent; } }
+
+/* Chat sub-layout inside its cell */
+.chat-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
 /* Chat */
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; }
@@ -42,6 +86,19 @@ body { background: var(--bg); color: var(--text); font-family: var(--mono); font
 .msg.assistant { color: var(--text); white-space: pre-wrap; }
 .msg.system { color: var(--yellow); font-size: 12px; }
 .msg.error { color: var(--red); }
+
+/* Market event messages */
+.msg.market-event { font-size: 12px; padding: 6px 10px; border-radius: 4px; border-left: 3px solid; margin: 8px 0; background: #141620; }
+.msg.market-event.info  { border-color: var(--green); color: #aef5c4; }
+.msg.market-event.warn  { border-color: var(--yellow); color: #f5e9ae; }
+.msg.market-event.alert { border-color: var(--red); color: #f5aeae; background: #2a1414; }
+.msg.market-event .ev-time { color: var(--dim); margin-right: 6px; }
+.msg.market-event .ev-sym  { color: var(--accent); font-weight: 600; margin-right: 6px; }
+
+/* Header toggle buttons */
+.toggle-btn { background: none; border: 1px solid var(--border); color: var(--dim); padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 10px; font-family: var(--mono); margin-left: 4px; }
+.toggle-btn:hover { color: var(--text); border-color: var(--accent); }
+.toggle-btn.active { color: var(--green); border-color: var(--green); background: rgba(34,197,94,0.08); }
 
 /* Tool calls */
 .tool-block { background: #141620; border: 1px solid var(--border); border-radius: 4px; margin: 6px 0; font-size: 12px; }
@@ -150,27 +207,37 @@ body { background: var(--bg); color: var(--text); font-family: var(--mono); font
 </div>
 
 <div class="main">
-  <!-- Chat Panel -->
-  <div class="chat-panel">
-    <div class="chat-actions">
-      <button onclick="clearChat()" title="Clear chat history">Clear Chat</button>
-      <button onclick="exportChat()" title="Export chat as text">Export</button>
+
+  <!-- Left column: 3 charts -->
+  <div class="cell cell-chart-1">
+    <div class="chart-wrap">
+      <canvas class="chart-canvas" id="chart-nifty"></canvas>
+      <div class="chart-label">NIFTY 50</div>
+      <div class="chart-price" id="chart-nifty-price">—</div>
+      <div class="chart-meta"  id="chart-nifty-meta">5m · 1d</div>
     </div>
-    <div class="chat-messages" id="chatMessages">
-      <div class="msg system">AI Trading Agent ready. Type a message to start.</div>
-      <div class="msg system">Examples: "What is NIFTY at?" | "Analyze RELIANCE" | "Buy NIFTY PE, SL 5pts, target 10pts"</div>
+  </div>
+  <div class="cell cell-chart-2">
+    <div class="chart-wrap">
+      <canvas class="chart-canvas" id="chart-banknifty"></canvas>
+      <div class="chart-label">BANK NIFTY</div>
+      <div class="chart-price" id="chart-banknifty-price">—</div>
+      <div class="chart-meta"  id="chart-banknifty-meta">5m · 1d</div>
     </div>
-    <div class="chat-input-area">
-      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
-      <button id="stopBtn" onclick="stopChat()" style="display:none; background:var(--red);">Stop</button>
-      <button id="sendBtn" onclick="sendMessage()">Send</button>
+  </div>
+  <div class="cell cell-chart-3">
+    <div class="chart-wrap">
+      <canvas class="chart-canvas" id="chart-finnifty"></canvas>
+      <div class="chart-label">FIN NIFTY</div>
+      <div class="chart-price" id="chart-finnifty-price">—</div>
+      <div class="chart-meta"  id="chart-finnifty-meta">5m · 1d</div>
     </div>
   </div>
 
-  <!-- Right Panel -->
-  <div class="right-panel">
-    <div class="panel">
-      <h3>Accounts <span style="float:right;font-size:10px;color:var(--dim)" id="activeAcctLabel">Paper</span></h3>
+  <!-- Middle top: Account status / Balance -->
+  <div class="cell cell-account">
+    <div class="cell-header">Account Status / Balance <span id="activeAcctLabel" style="text-transform:none;color:var(--dim)">Paper</span></div>
+    <div class="cell-body">
       <div id="accountsList"></div>
       <button onclick="toggleAddAccount()" style="background:none;border:1px dashed var(--border);color:var(--dim);width:100%;padding:5px;border-radius:3px;cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:6px;" id="addAcctToggle">+ Add Account</button>
       <div class="add-acct-form" id="addAcctForm">
@@ -190,21 +257,55 @@ body { background: var(--bg); color: var(--text); font-family: var(--mono); font
           <button class="save-btn" onclick="saveAccount()">Add Account</button>
         </div>
       </div>
+      <div id="marketPulse" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;"><div class="empty">Connecting...</div></div>
     </div>
-    <div class="panel">
-      <h3>Active Agents</h3>
-      <div id="agentsList"><div class="empty">No agents running</div></div>
+  </div>
+
+  <!-- Middle tall: Chat -->
+  <div class="cell cell-chat">
+    <div class="cell-header">Chat System
+      <span>
+        <button id="alertsBtn" class="toggle-btn" onclick="toggleAlerts()" title="Market event alerts">🔔 Alerts</button>
+        <button id="autoBtn" class="toggle-btn" onclick="toggleAuto()" title="Autonomous mode — auto-prompt every 5 min">🤖 Auto</button>
+        <button id="voiceBtn" class="toggle-btn" onclick="toggleVoice()" title="Read assistant replies aloud">🔊 Voice</button>
+        <button onclick="clearChat()" class="toggle-btn">Clear</button>
+        <button onclick="exportChat()" class="toggle-btn">Export</button>
+      </span>
     </div>
-    <div class="panel">
-      <h3>Portfolio</h3>
+    <div class="chat-panel">
+      <div class="chat-messages" id="chatMessages">
+        <div class="msg system">AI Trading Agent ready. Type a message to start.</div>
+        <div class="msg system">Examples: "What is NIFTY at?" | "Analyze RELIANCE" | "Buy NIFTY PE, SL 5pts, target 10pts"</div>
+      </div>
+      <div class="chat-input-area">
+        <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
+        <button id="stopBtn" onclick="stopChat()" style="display:none; background:var(--red);">Stop</button>
+        <button id="sendBtn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top right: 4 agent slots -->
+  <div class="cell-agents">
+    <div class="agent-slot" id="agentSlot0"><div class="cell-header" style="padding:0 0 4px 0;border:none">Active Agent 1</div><div class="empty" style="flex:1">No agents running</div></div>
+    <div class="agent-slot" id="agentSlot1"><div class="cell-header" style="padding:0 0 4px 0;border:none">Active Agent 2</div><div class="empty" style="flex:1">No agents running</div></div>
+    <div class="agent-slot" id="agentSlot2"><div class="cell-header" style="padding:0 0 4px 0;border:none">Active Agent 3</div><div class="empty" style="flex:1">No agents running</div></div>
+    <div class="agent-slot" id="agentSlot3"><div class="cell-header" style="padding:0 0 4px 0;border:none">Active Agent 4</div><div class="empty" style="flex:1">No agents running</div></div>
+    <div id="agentsList" style="display:none"></div>
+  </div>
+
+  <!-- Bottom right big: Portfolio -->
+  <div class="cell cell-portfolio">
+    <div class="cell-header">Portfolio</div>
+    <div class="cell-body">
       <div id="portfolio"><div class="empty">Loading...</div></div>
     </div>
-    <div class="panel">
-      <h3>Market Pulse</h3>
-      <div id="marketPulse"><div class="empty">Connecting...</div></div>
-    </div>
-    <div class="panel">
-      <h3>Trading Memory <span class="memory-count" id="memoryCount">0</span></h3>
+  </div>
+
+  <!-- Bottom right big: Trading Memory -->
+  <div class="cell cell-memory">
+    <div class="cell-header">Trading Memory <span class="memory-count" id="memoryCount">0</span></div>
+    <div class="cell-body">
       <div class="memory-tabs" id="memoryTabs">
         <div class="memory-tab active" data-cat="patterns" onclick="switchMemTab('patterns')">Patterns</div>
         <div class="memory-tab" data-cat="rules" onclick="switchMemTab('rules')">Rules</div>
@@ -215,6 +316,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--mono); font
       <div class="memory-list" id="memoryList"><div class="empty">No memories yet</div></div>
     </div>
   </div>
+
 </div>
 
 <script>
@@ -230,6 +332,101 @@ let isWaiting = false;
 let chatHistory = [];  // persisted to localStorage
 let memoryData = {};   // from bridge
 let activeMemTab = 'patterns';
+
+// ── Toggle features: alerts / autonomous / voice ────────────────────────────
+const TOGGLE_KEY = 'trading_toggles';
+const AUTO_INTERVAL_MS = 5 * 60 * 1000;  // 5 min
+const AUTO_PROMPT = 'Quick status check: any open positions approaching SL or target? Any market events I should act on right now? Be terse.';
+let toggles = { alerts: true, auto: false, voice: false };
+let autoTimer = null;
+
+function loadToggles() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TOGGLE_KEY) || '{}');
+    toggles = { ...toggles, ...saved };
+  } catch {}
+  applyToggleUI();
+  if (toggles.auto) startAutoTimer();
+}
+
+function saveToggles() {
+  localStorage.setItem(TOGGLE_KEY, JSON.stringify(toggles));
+}
+
+function applyToggleUI() {
+  document.getElementById('alertsBtn').classList.toggle('active', toggles.alerts);
+  document.getElementById('autoBtn').classList.toggle('active', toggles.auto);
+  document.getElementById('voiceBtn').classList.toggle('active', toggles.voice);
+}
+
+function toggleAlerts() {
+  toggles.alerts = !toggles.alerts;
+  saveToggles(); applyToggleUI();
+  addSystemMsg(toggles.alerts ? '🔔 Market alerts enabled.' : '🔕 Market alerts muted.');
+}
+
+function toggleAuto() {
+  toggles.auto = !toggles.auto;
+  saveToggles(); applyToggleUI();
+  if (toggles.auto) {
+    startAutoTimer();
+    addSystemMsg('🤖 Autonomous mode ON — will self-prompt every 5 min.');
+  } else {
+    stopAutoTimer();
+    addSystemMsg('🤖 Autonomous mode OFF.');
+  }
+}
+
+function toggleVoice() {
+  toggles.voice = !toggles.voice;
+  saveToggles(); applyToggleUI();
+  if (!toggles.voice && window.speechSynthesis) window.speechSynthesis.cancel();
+  addSystemMsg(toggles.voice ? '🔊 Voice ON — replies will be read aloud.' : '🔊 Voice OFF.');
+}
+
+function startAutoTimer() {
+  stopAutoTimer();
+  autoTimer = setInterval(() => {
+    if (!ws || ws.readyState !== 1 || isWaiting) return;
+    addUserMsg('[auto] ' + AUTO_PROMPT);
+    ws.send(JSON.stringify({type: 'chat', message: AUTO_PROMPT}));
+    currentAssistantDiv = null;
+    setWaiting(true);
+  }, AUTO_INTERVAL_MS);
+}
+
+function stopAutoTimer() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+}
+
+// ── Voice / TTS ─────────────────────────────────────────────────────────────
+let voiceBuffer = '';
+let voiceFlushTimer = null;
+
+function queueVoice(text) {
+  if (!toggles.voice || !window.speechSynthesis) return;
+  voiceBuffer += text;
+  // Flush on sentence boundary or after 400ms idle
+  const m = voiceBuffer.match(/^([\s\S]*?[.!?।\n])\s/);
+  if (m) {
+    speakChunk(m[1]);
+    voiceBuffer = voiceBuffer.slice(m[0].length);
+  }
+  if (voiceFlushTimer) clearTimeout(voiceFlushTimer);
+  voiceFlushTimer = setTimeout(() => {
+    if (voiceBuffer.trim()) { speakChunk(voiceBuffer); voiceBuffer = ''; }
+  }, 600);
+}
+
+function speakChunk(text) {
+  const clean = text.replace(/[*_`#>\[\]()]/g, '').trim();
+  if (!clean) return;
+  try {
+    const u = new SpeechSynthesisUtterance(clean);
+    u.rate = 1.05; u.pitch = 1.0; u.volume = 1.0;
+    window.speechSynthesis.speak(u);
+  } catch {}
+}
 
 // ── Chat History Persistence ────────────────────────────────────────────────
 const HISTORY_KEY = 'trading_chat_history';
@@ -266,6 +463,17 @@ function loadChatHistory() {
         const div = document.createElement('div');
         div.className = 'msg error';
         div.textContent = item.text;
+        chatMessages.appendChild(div);
+      } else if (item.type === 'market-event') {
+        const div = document.createElement('div');
+        div.className = 'msg market-event ' + (item.level || 'info');
+        const t = new Date(item.ts || Date.now());
+        const hh = String(t.getHours()).padStart(2,'0');
+        const mm = String(t.getMinutes()).padStart(2,'0');
+        const ss = String(t.getSeconds()).padStart(2,'0');
+        div.innerHTML = `<span class="ev-time">[${hh}:${mm}:${ss}]</span>` +
+                        `<span class="ev-sym">${item.symbol || ''}</span>` +
+                        (item.text || '').replace(/</g,'&lt;');
         chatMessages.appendChild(div);
       } else if (item.type === 'tool') {
         const block = document.createElement('div');
@@ -333,6 +541,8 @@ function connectWS() {
     wsDot.className = 'dot on';
     ws.send(JSON.stringify({type: 'get_portfolio'}));
     ws.send(JSON.stringify({type: 'get_agents'}));
+    requestCharts();
+    requestTicks();
   };
 
   ws.onclose = () => {
@@ -355,6 +565,11 @@ function handleWSMessage(msg) {
     case 'chat_stream':
       hideThinking();
       appendToAssistant(msg.delta);
+      queueVoice(msg.delta);
+      break;
+
+    case 'market_event':
+      handleMarketEvent(msg);
       break;
 
     case 'chat_done':
@@ -393,6 +608,14 @@ function handleWSMessage(msg) {
 
     case 'portfolio':
       renderPortfolio(msg.data);
+      break;
+
+    case 'chart':
+      handleChartMessage(msg);
+      break;
+
+    case 'ticks':
+      handleTicks(msg.ticks);
       break;
 
     case 'chat_stopped':
@@ -486,6 +709,28 @@ function finalizeAssistant() {
   currentAssistantDiv = null;
 }
 
+function handleMarketEvent(msg) {
+  if (!toggles.alerts) return;
+  const level = msg.level || 'info';
+  const div = document.createElement('div');
+  div.className = 'msg market-event ' + level;
+  const t = new Date(msg.ts || Date.now());
+  const hh = String(t.getHours()).padStart(2,'0');
+  const mm = String(t.getMinutes()).padStart(2,'0');
+  const ss = String(t.getSeconds()).padStart(2,'0');
+  div.innerHTML = `<span class="ev-time">[${hh}:${mm}:${ss}]</span>` +
+                  `<span class="ev-sym">${msg.symbol || ''}</span>` +
+                  (msg.text || '').replace(/</g,'&lt;');
+  chatMessages.appendChild(div);
+  chatHistory.push({ type: 'market-event', level, symbol: msg.symbol, text: msg.text, ts: msg.ts || Date.now() });
+  saveChatHistory();
+  scrollChat();
+  // Speak alerts out loud if voice is on (only warn/alert levels)
+  if (toggles.voice && level !== 'info') {
+    speakChunk(`${msg.symbol || ''} alert. ${msg.text || ''}`);
+  }
+}
+
 function addSystemMsg(text) {
   const div = document.createElement('div');
   div.className = 'msg system';
@@ -576,41 +821,48 @@ function scrollChat() {
 }
 
 // ── Agent cards ──────────────────────────────────────────────────────────────
-function renderAgents(agents) {
-  const el = document.getElementById('agentsList');
-  if (!agents || agents.length === 0) {
-    el.innerHTML = '<div class="empty">No agents running</div>';
+let _agentsState = [];
+
+function slotEl(i) { return document.getElementById('agentSlot' + i); }
+
+function renderSlot(i, a) {
+  const el = slotEl(i);
+  if (!el) return;
+  if (!a) {
+    el.innerHTML = '<div class="cell-header" style="padding:0 0 4px 0;border:none">Active Agent ' + (i+1) + '</div><div class="empty" style="flex:1">No agents running</div>';
     return;
   }
-  el.innerHTML = agents.map(a => agentCardHTML(a)).join('');
+  const cfg = a.config || {};
+  const pnl = a.pnl || (a.last_update && a.last_update.pnl) || 0;
+  const nifty = (a.last_update && a.last_update.nifty) || '--';
+  const status = a.status || 'RUNNING';
+  const pnlC = pnl >= 0 ? 'pos' : 'neg';
+  const title = a.name || ((cfg.symbol || '') + ' ' + (cfg.strike || '') + (cfg.type || ''));
+  el.innerHTML =
+    '<div class="cell-header" style="padding:0 0 4px 0;border:none">' + escHtml(title) + '</div>' +
+    '<div class="status ' + status.toLowerCase() + '" style="font-size:10px">' + status + '</div>' +
+    '<div class="pnl ' + pnlC + '" id="agent-' + (a.id || a.agent_id) + '-pnl" style="font-size:16px;font-weight:700;margin:4px 0">' + (pnl>=0?'+':'') + pnl + '</div>' +
+    '<div class="meta" style="font-size:10px;color:var(--dim)">NIFTY <span class="nifty-val">' + nifty + '</span></div>' +
+    '<div class="levels" style="display:flex;gap:8px;font-size:10px;margin-top:3px">' +
+      '<span class="sl" style="color:var(--red)">SL ' + (cfg.sl_points || '--') + '</span>' +
+      '<span class="tgt" style="color:var(--green)">T ' + (cfg.target_points || '--') + '</span>' +
+    '</div>';
+}
+
+function renderAgents(agents) {
+  _agentsState = agents || [];
+  for (let i = 0; i < 4; i++) renderSlot(i, _agentsState[i]);
 }
 
 function updateAgentCard(data) {
-  const el = document.getElementById('agentsList');
-  let card = document.getElementById(`agent-${data.agent_id}`);
-  if (!card) {
-    // Create new card
-    const div = document.createElement('div');
-    div.innerHTML = agentCardHTML(data);
-    el.innerHTML = '';
-    el.appendChild(div.firstElementChild);
-    card = document.getElementById(`agent-${data.agent_id}`);
+  const idx = _agentsState.findIndex(a => (a.id || a.agent_id) === data.agent_id);
+  if (idx >= 0) {
+    _agentsState[idx] = { ..._agentsState[idx], ...data };
+  } else {
+    const freeIdx = _agentsState.length < 4 ? _agentsState.length : 0;
+    _agentsState[freeIdx] = data;
   }
-  // Update values
-  const pnlEl = card.querySelector('.pnl');
-  const niftyEl = card.querySelector('.nifty-val');
-  const statusEl = card.querySelector('.status');
-  if (pnlEl) {
-    const pnl = data.pnl || 0;
-    pnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl}`;
-    pnlEl.className = `pnl ${pnl >= 0 ? 'pos' : 'neg'}`;
-  }
-  if (niftyEl) niftyEl.textContent = data.nifty || '--';
-  if (statusEl) {
-    const st = data.status || 'RUNNING';
-    statusEl.textContent = st;
-    statusEl.className = `status ${st.toLowerCase()}`;
-  }
+  renderAgents(_agentsState);
 }
 
 function agentCardHTML(a) {
@@ -917,17 +1169,197 @@ function escHtml(str) {
   return d.innerHTML;
 }
 
+// ── Sparkline charts ─────────────────────────────────────────────────────────
+const CHARTS = [
+  { id: 'nifty',     symbol: '^NSEI',    label: 'NIFTY 50'  },
+  { id: 'banknifty', symbol: '^NSEBANK', label: 'BANK NIFTY'},
+  { id: 'finnifty',  symbol: 'NIFTY_FIN_SERVICE.NS', label: 'FIN NIFTY' },
+];
+const _chartData = {};
+
+function requestCharts() {
+  if (!ws || ws.readyState !== 1) return;
+  for (const c of CHARTS) {
+    ws.send(JSON.stringify({ type: 'get_chart', symbol: c.symbol, range: '1d', interval: '5m' }));
+  }
+}
+
+function drawSparkline(canvasId, candles, prevClose) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const parent = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const w = parent.clientWidth, h = parent.clientHeight;
+  if (w === 0 || h === 0) return;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  if (!candles || candles.length < 2) {
+    ctx.fillStyle = '#555';
+    ctx.font = '11px Consolas';
+    ctx.textAlign = 'center';
+    ctx.fillText('no data', w/2, h/2);
+    return;
+  }
+
+  const closes = candles.map(c => c.c);
+  const min = Math.min(...closes, prevClose || Infinity);
+  const max = Math.max(...closes, prevClose || -Infinity);
+  const range = max - min || 1;
+
+  // Padding
+  const padT = 24, padB = 18, padL = 6, padR = 6;
+  const gw = w - padL - padR, gh = h - padT - padB;
+
+  // Grid
+  ctx.strokeStyle = '#20242e';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = padT + (gh * i) / 4;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+  }
+
+  // Prev close line
+  if (prevClose != null && prevClose >= min && prevClose <= max) {
+    const y = padT + gh - ((prevClose - min) / range) * gh;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = '#555';
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Determine bullish/bearish vs first close (or prev close)
+  const base = prevClose != null ? prevClose : closes[0];
+  const last = closes[closes.length - 1];
+  const up = last >= base;
+  const col = up ? '#26a69a' : '#ef5350';
+  const colFill = up ? 'rgba(38,166,154,0.18)' : 'rgba(239,83,80,0.18)';
+
+  // Area fill
+  ctx.beginPath();
+  closes.forEach((c, i) => {
+    const x = padL + (gw * i) / (closes.length - 1);
+    const y = padT + gh - ((c - min) / range) * gh;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  const lastX = padL + gw;
+  ctx.lineTo(lastX, padT + gh);
+  ctx.lineTo(padL, padT + gh);
+  ctx.closePath();
+  ctx.fillStyle = colFill;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  closes.forEach((c, i) => {
+    const x = padL + (gw * i) / (closes.length - 1);
+    const y = padT + gh - ((c - min) / range) * gh;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Update label
+  const priceEl = document.getElementById(canvasId + '-price');
+  const metaEl = document.getElementById(canvasId + '-meta');
+  if (priceEl) {
+    const pct = prevClose ? ((last - prevClose) / prevClose) * 100 : 0;
+    priceEl.textContent = last.toFixed(2) + '  ' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
+    priceEl.style.color = up ? '#26a69a' : '#ef5350';
+  }
+  if (metaEl) {
+    metaEl.textContent = `5m · ${candles.length} bars · H ${max.toFixed(0)} L ${min.toFixed(0)}`;
+  }
+}
+
+function handleChartMessage(msg) {
+  const c = CHARTS.find(x => x.symbol === msg.symbol);
+  if (!c) return;
+  _chartData[c.id] = { candles: msg.candles, meta: msg.meta || {} };
+  drawSparkline('chart-' + c.id, msg.candles, msg.meta?.prevClose);
+}
+
+// ── Live per-second ticks ────────────────────────────────────────────────────
+const TICK_MAP = { nifty: 'NIFTY', banknifty: 'BANKNIFTY', finnifty: 'FINNIFTY' };
+const _lastTick = {};
+
+function requestTicks() {
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'get_ticks' }));
+}
+
+function handleTicks(ticks) {
+  if (!ticks) return;
+  // Update chart price overlays + extend last candle live
+  for (const [chartId, key] of Object.entries(TICK_MAP)) {
+    const t = ticks[key];
+    if (!t || t.last == null) continue;
+    const priceEl = document.getElementById('chart-' + chartId + '-price');
+    const prev = _lastTick[key]?.last;
+    if (priceEl) {
+      const pct = t.pct != null ? t.pct : (t.prev ? ((t.last - t.prev) / t.prev) * 100 : 0);
+      priceEl.innerHTML = '<span class="live-dot"></span>' + t.last.toFixed(2) + '  ' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
+      priceEl.style.color = pct >= 0 ? '#26a69a' : '#ef5350';
+      if (prev != null && t.last !== prev) {
+        priceEl.classList.remove('tick-flash-up', 'tick-flash-down');
+        void priceEl.offsetWidth;
+        priceEl.classList.add(t.last > prev ? 'tick-flash-up' : 'tick-flash-down');
+      }
+    }
+    // Extend last candle of the sparkline so the line animates with the tick
+    const cd = _chartData[chartId];
+    if (cd && cd.candles && cd.candles.length > 0) {
+      const last = cd.candles[cd.candles.length - 1];
+      last.c = t.last;
+      if (t.last > last.h) last.h = t.last;
+      if (t.last < last.l) last.l = t.last;
+      drawSparkline('chart-' + chartId, cd.candles, cd.meta?.prevClose);
+    }
+    _lastTick[key] = t;
+  }
+
+  // Update Market Pulse section
+  const mp = document.getElementById('marketPulse');
+  if (mp && ticks.NIFTY) {
+    const n = ticks.NIFTY, b = ticks.BANKNIFTY, f = ticks.FINNIFTY, v = ticks.VIX;
+    const row = (label, t) => {
+      if (!t) return '';
+      const c = (t.pct||0) >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<div class="port-row"><span class="label">${label}</span><span style="color:${c}">${(t.last||0).toFixed(2)} <span style="font-size:10px">${(t.pct>=0?'+':'')+(t.pct||0).toFixed(2)}%</span></span></div>`;
+    };
+    mp.innerHTML =
+      '<div style="font-size:10px;color:var(--dim);margin-bottom:4px"><span class="live-dot"></span>LIVE · 1s</div>' +
+      row('NIFTY', n) + row('BANKNIFTY', b) + row('FINNIFTY', f) + (v ? row('VIX', v) : '');
+  }
+}
+
+// Redraw on resize
+window.addEventListener('resize', () => {
+  for (const c of CHARTS) {
+    const d = _chartData[c.id];
+    if (d) drawSparkline('chart-' + c.id, d.candles, d.meta?.prevClose);
+  }
+});
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 loadChatHistory();
+loadToggles();
 connectWS();
 fetchAccounts();
-fetchMarketPulse();
 fetchMemory();
-setInterval(fetchMarketPulse, 10000);
+// Market pulse now driven by 1s live ticks (see handleTicks)
 setInterval(refreshPortfolio, 15000);
 setInterval(fetchAccounts, 30000);
 setInterval(fetchMemory, 30000);
 setInterval(updateClock, 1000);
+setInterval(requestCharts, 30000);  // full candle refresh every 30s
+setInterval(requestTicks, 1000);    // live price ticks every 1s
 updateClock();
 chatInput.focus();
 </script>

@@ -33,6 +33,8 @@ def list_agents() -> list[dict]:
             "created_at": a["created_at"],
             "config": a["config"],
             "last_update": a.get("last_update"),
+            "pnl": a.get("pnl", 0),
+            "exit_reason": a.get("exit_reason"),
         }
         for a in agents.values()
     ]
@@ -53,6 +55,76 @@ async def stop_agent(agent_id: str) -> dict:
         await asyncio.sleep(0.5)
 
     return {"success": True, "message": f"Agent {agent_id} stopped", "final_status": agent["status"]}
+
+
+async def auto_spawn_from_portfolio(sl_pct: float = 0.008, tg_pct: float = 0.015, delta: float = 0.40) -> int:
+    """
+    On startup, spawn a trade monitor for each OPTION in the paper portfolio.
+    Uses current spot as the baseline (entry_nifty) and % of spot as SL/target points.
+    Deduped by portfolio_key so repeated calls are safe.
+    """
+    try:
+        pr = await bridge.get_portfolio()
+        pdata = pr.get("data") or {}
+        holdings = pdata.get("holdings") or []
+
+        ticks_resp = await bridge.get_ticks()
+        ticks = ticks_resp.get("ticks") or {}
+
+        spawned = 0
+        for h in holdings:
+            if h.get("type") != "OPTION":
+                continue
+            symbol   = h.get("symbol")
+            strike   = h.get("strike")
+            opt_type = h.get("optType")
+            expiry   = h.get("expiry")
+            entry_prem = h.get("premium")
+            lots     = h.get("lots", 1)
+            lot_size = h.get("lotSize", 75)
+            if not (symbol and strike and opt_type and entry_prem):
+                continue
+
+            key = f"{symbol}_{strike}_{opt_type}_{expiry}"
+            already = any(
+                a.get("config", {}).get("portfolio_key") == key
+                and a.get("status") == "RUNNING"
+                for a in agents.values()
+            )
+            if already:
+                continue
+
+            t = ticks.get(symbol) or ticks.get("NIFTY") or {}
+            cur_spot = t.get("last")
+            if not cur_spot:
+                continue
+
+            sl_pts = max(5, round(cur_spot * sl_pct, 1))
+            tg_pts = max(10, round(cur_spot * tg_pct, 1))
+
+            config = {
+                "symbol": symbol,
+                "type": opt_type,
+                "strike": strike,
+                "expiry": expiry,
+                "entry_nifty": cur_spot,
+                "entry_premium": entry_prem,
+                "sl_points": sl_pts,
+                "tgt_points": tg_pts,
+                "lots": lots,
+                "lotSize": lot_size,
+                "delta": delta,
+                "portfolio_key": key,
+                "auto_spawned": True,
+            }
+            await start_trade_monitor(config)
+            spawned += 1
+
+        print(f"[agents] auto-spawned {spawned} portfolio monitor(s)")
+        return spawned
+    except Exception as e:
+        print(f"[agents] auto-spawn failed: {e}")
+        return 0
 
 
 async def start_trade_monitor(config: dict) -> dict:
@@ -84,10 +156,20 @@ async def start_trade_monitor(config: dict) -> dict:
 
 def _on_agent_done(agent_id: str, task: asyncio.Task):
     agent = agents.get(agent_id)
-    if agent and agent["status"] == "RUNNING":
-        if task.exception():
+    if not agent:
+        return
+    exc = None
+    try:
+        exc = task.exception()
+    except (asyncio.CancelledError, asyncio.InvalidStateError):
+        return
+    if agent["status"] == "RUNNING":
+        if exc:
             agent["status"] = "ERROR"
-            agent["exit_reason"] = str(task.exception())
+            agent["exit_reason"] = f"{type(exc).__name__}: {exc}"
+            import traceback
+            tb = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            print(f"[agent {agent_id}] task crashed:\n{tb}")
         else:
             agent["status"] = "COMPLETED"
 
@@ -123,11 +205,12 @@ async def _trade_monitor_loop(agent_id: str):
     tick = 0
     while not agent["stop_requested"]:
         try:
-            # Fetch live NIFTY
-            resp = await bridge.get_nifty()
-            nifty_data = resp.get("data", {})
-            nifty = nifty_data.get("lastPrice", entry_nifty)
-            p_change = nifty_data.get("pChange", 0)
+            # Fetch live spot for this symbol (NIFTY/BANKNIFTY/FINNIFTY)
+            ticks_resp = await bridge.get_ticks()
+            ticks = ticks_resp.get("ticks") or {}
+            t = ticks.get(symbol) or ticks.get("NIFTY") or {}
+            nifty = t.get("last", entry_nifty)
+            p_change = t.get("pct", 0)
 
             # Calculate current P&L
             if opt_type == "PE":
@@ -222,8 +305,9 @@ async def _trade_monitor_loop(agent_id: str):
 
     # Manual stop — sell at market
     try:
-        resp = await bridge.get_nifty()
-        nifty = resp.get("data", {}).get("lastPrice", entry_nifty)
+        ticks_resp = await bridge.get_ticks()
+        t = (ticks_resp.get("ticks") or {}).get(symbol) or {}
+        nifty = t.get("last", entry_nifty)
         if opt_type == "PE":
             move = entry_nifty - nifty
         else:

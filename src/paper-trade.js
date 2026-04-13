@@ -3,7 +3,7 @@
  * Uses live NSE prices, stores portfolio in JSON file
  * Supports stocks (intraday + delivery) and options simulation
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -27,19 +27,27 @@ const DEFAULT_PORTFOLIO = {
 
 // ── In-memory cache + async persist (0ms trades instead of 20-120ms) ─────────
 let _cache = null;
+let _cacheMtime = 0;
 let _persistTimer = null;
 const PERSIST_DEBOUNCE = 2000; // flush to disk every 2s max
 
 function load() {
-  if (_cache) return _cache;
   // Cold start: one-time sync read
   if (!existsSync(DB_PATH)) {
     _cache = { ...DEFAULT_PORTFOLIO };
+    _cacheMtime = Date.now();
     _flushSync();
     return _cache;
   }
-  try { _cache = JSON.parse(readFileSync(DB_PATH, 'utf8')); }
-  catch { _cache = { ...DEFAULT_PORTFOLIO }; }
+  // Reload if file changed on disk (another process wrote to it)
+  const diskMtime = statSync(DB_PATH).mtimeMs;
+  if (_cache && diskMtime <= _cacheMtime) return _cache;
+  try {
+    _cache = JSON.parse(readFileSync(DB_PATH, 'utf8'));
+    _cacheMtime = diskMtime;
+  } catch {
+    _cache = _cache || { ...DEFAULT_PORTFOLIO };
+  }
   return _cache;
 }
 
@@ -54,9 +62,9 @@ function _schedulePersist() {
   _persistTimer = setTimeout(() => {
     const dir = dirname(DB_PATH);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFile(DB_PATH, JSON.stringify(_cache, null, 2)).catch(err => {
-      console.error('Paper trade persist failed:', err.message);
-    });
+    writeFile(DB_PATH, JSON.stringify(_cache, null, 2))
+      .then(() => { try { _cacheMtime = statSync(DB_PATH).mtimeMs; } catch {} })
+      .catch(err => { console.error('Paper trade persist failed:', err.message); });
   }, PERSIST_DEBOUNCE);
 }
 

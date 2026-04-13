@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(ls src/*.js)",
+      "Bash(node --input-type=module --eval \":*)",
+      "Bash(node cli.mjs help)",
+      "Bash(node cli.mjs status)",
+      "Bash(node cli.mjs pcr)"
+    ]
+  }
+}

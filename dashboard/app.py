@@ -11,6 +11,7 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.websockets import WebSocket, WebSocketDisconnect
 from dashboard import bridge
 from dashboard import agents as agent_mgr
+from dashboard import market_watcher
 from dashboard.claude_chat import ChatSession
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -27,7 +28,7 @@ async def broadcast_to_all(msg: dict):
             await ws.send_json(msg)
         except Exception:
             dead.add(ws)
-    clients -= dead
+    clients.difference_update(dead)
 
 
 # Register broadcast function with agent system
@@ -144,6 +145,25 @@ async def ws_endpoint(ws: WebSocket):
             elif msg_type == "get_agents":
                 await ws.send_json({"type": "agent_list", "agents": agent_mgr.list_agents()})
 
+            elif msg_type == "get_chart":
+                symbol = data.get("symbol", "^NSEI")
+                range_ = data.get("range", "1d")
+                interval = data.get("interval", "5m")
+                result = await bridge.get_chart(symbol, range_, interval)
+                await ws.send_json({
+                    "type": "chart",
+                    "symbol": symbol,
+                    "candles": result.get("candles", []),
+                    "meta": result.get("meta", {}),
+                })
+
+            elif msg_type == "get_ticks":
+                result = await bridge.get_ticks()
+                await ws.send_json({
+                    "type": "ticks",
+                    "ticks": result.get("ticks", {}),
+                })
+
     except WebSocketDisconnect:
         # Kill any running chat on disconnect
         if chat_task and not chat_task.done():
@@ -184,9 +204,19 @@ async def lifespan(app):
     else:
         print("WARNING: 'claude' CLI not found. Chat will not work.")
 
+    # Start background market-event watcher
+    market_watcher.start(broadcast_to_all)
+
+    # Auto-spawn a trade monitor for every open option in the paper portfolio
+    try:
+        await agent_mgr.auto_spawn_from_portfolio()
+    except Exception as e:
+        print(f"WARNING: auto-spawn failed: {e}")
+
     yield
 
     # Cleanup
+    await market_watcher.stop()
     await bridge.close()
 
 

@@ -58,6 +58,15 @@ async def get_nifty() -> dict:
     return await _get("/api/nifty")
 
 
+async def get_chart(symbol: str, range_: str = "1d", interval: str = "5m") -> dict:
+    from urllib.parse import quote
+    return await _get(f"/api/chart/{quote(symbol, safe='')}?range={range_}&interval={interval}")
+
+
+async def get_ticks() -> dict:
+    return await _get("/api/ticks")
+
+
 async def get_banknifty() -> dict:
     return await _get("/api/banknifty")
 

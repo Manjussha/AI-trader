@@ -84,6 +84,24 @@ async function handleRequest(req, res) {
       const data = await market._nseRequest('/equity-stockIndices?index=NIFTY%20BANK');
       return json(res, { success: true, data: data.data?.[0] || data });
     }
+    // Fast live-tick: one NSE call returns all indices
+    if (url === '/api/ticks') {
+      const all = await market._nseRequest('/allIndices');
+      const pick = (name) => {
+        const r = all?.data?.find(d => (d.index || d.indexName || d.symbol) === name);
+        if (!r) return null;
+        return { last: r.last ?? r.lastPrice, change: r.variation ?? r.change, pct: r.percentChange ?? r.pChange, high: r.high ?? r.dayHigh, low: r.low ?? r.dayLow, open: r.open, prev: r.previousClose, ts: Date.now() };
+      };
+      return json(res, {
+        success: true,
+        ticks: {
+          NIFTY:     pick('NIFTY 50'),
+          BANKNIFTY: pick('NIFTY BANK'),
+          FINNIFTY:  pick('NIFTY FINANCIAL SERVICES') || pick('NIFTY FIN SERVICE'),
+          VIX:       pick('INDIA VIX'),
+        }
+      });
+    }
     if (url === '/api/market-status') {
       const data = await market._nseRequest('/marketStatus');
       return json(res, { success: true, data });
@@ -100,6 +118,23 @@ async function handleRequest(req, res) {
       const interval = q.interval || '1d';
       const data = await market.getHistoricalDataYahoo(symbol, 'NSE', days, interval);
       return json(res, { success: true, candles: data.candles || [] });
+    }
+    // Raw Yahoo chart — no .NS suffix injection, works for indices (^NSEI, ^NSEBANK)
+    if (url.startsWith('/api/chart/')) {
+      const symbol = param(url, '/api/chart/');
+      const q = query(url);
+      const range = q.range || '1d';
+      const interval = q.interval || '5m';
+      const yurl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+      const r = await fetch(yurl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const d = await r.json();
+      const result = d?.chart?.result?.[0];
+      if (!result || !result.timestamp) return err(res, 'No chart data');
+      const o = result.indicators?.quote?.[0];
+      const candles = result.timestamp.map((t, i) => ({
+        t, o: o?.open?.[i], h: o?.high?.[i], l: o?.low?.[i], c: o?.close?.[i], v: o?.volume?.[i] || 0
+      })).filter(x => x.c != null);
+      return json(res, { success: true, symbol, candles, meta: { last: result.meta?.regularMarketPrice, prevClose: result.meta?.chartPreviousClose } });
     }
     if (url === '/api/gainers') {
       const data = await market.getTopGainers('NIFTY 50', 10);

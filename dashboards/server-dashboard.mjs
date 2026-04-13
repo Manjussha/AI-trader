@@ -368,16 +368,27 @@ function applyLive(data) {
     document.getElementById('holdings').innerHTML = (p.holdings||[]).map(h => {
       const pnl   = parseFloat(h.unrealizedPnl||0);
       const pnlC  = pnl >= 0 ? '#26a69a' : '#ef5350';
-      const ltp   = parseFloat(h.ltp||0);
-      const entry = parseFloat(h.avgPrice||0);
-      const sl    = data.stocks?.[h.symbol]?.levels?.sl || 0;
-      const t1    = data.stocks?.[h.symbol]?.levels?.t1 || ltp*1.05;
-      const range = Math.abs(t1-sl)||1;
-      const prog  = Math.max(0, Math.min(100, (ltp-sl)/range*100));
+      let title, meta, prog = 0;
+      if (h.type === 'OPTION') {
+        const cp = parseFloat(h.currentPremium||h.premium||0);
+        const ep = parseFloat(h.premium||0);
+        title = h.symbol + ' ' + h.strike + ' ' + h.optType;
+        meta = h.lots + 'L \u00d7 ' + h.lotSize + ' \u00b7 \u20b9' + ep.toFixed(1) + ' \u2192 \u20b9' + cp.toFixed(1) + ' \u00b7 ' + (h.expiry||'').slice(5);
+        prog = Math.max(0, Math.min(100, ((cp/ep)-0.85)/0.35*100));
+      } else {
+        const ltp   = parseFloat(h.ltp||0);
+        const entry = parseFloat(h.avgPrice||0);
+        const sl    = data.stocks?.[h.symbol]?.levels?.sl || 0;
+        const t1    = data.stocks?.[h.symbol]?.levels?.t1 || ltp*1.05;
+        const range = Math.abs(t1-sl)||1;
+        prog  = Math.max(0, Math.min(100, (ltp-sl)/range*100));
+        title = h.symbol;
+        meta = h.qty + ' qty \u00b7 avg \u20b9' + entry.toFixed(1);
+      }
       return '<div class="holding-card">' +
         '<div class="h-left">' +
-          '<div class="h-sym">' + h.symbol + '</div>' +
-          '<div class="h-meta">' + h.qty + ' qty \u00b7 avg \u20b9' + entry.toFixed(1) + '</div>' +
+          '<div class="h-sym">' + title + '</div>' +
+          '<div class="h-meta">' + meta + '</div>' +
           '<div class="h-prog"><div class="h-prog-fill" style="width:'+prog+'%;background:'+pnlC+'"></div></div>' +
         '</div>' +
         '<div class="h-pnl" style="color:'+pnlC+'">'+(pnl>=0?'+':'')+'\u20b9'+pnl.toFixed(0)+'</div>' +
